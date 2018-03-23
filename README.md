@@ -9,6 +9,11 @@ scratch, touching on the essentials, piece by piece.
 Tested on Ubuntu 16.04 x86_64
 
 
+Disable automatic opening in window of mounting
+```
+$ gsettings set org.gnome.desktop.media-handling automount-open false
+```
+
 ```
 $ ./update.sh <folder name>
 $ qemu-system-i386 -fda floppy.img boot -a
