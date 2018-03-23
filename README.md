@@ -9,7 +9,7 @@ scratch, touching on the essentials, piece by piece.
 Tested on Ubuntu 16.04 x86_64
 
 
-Disable automatic opening in window of mounting
+Disable automatic opening in window after mount.
 ```
 $ gsettings set org.gnome.desktop.media-handling automount-open false
 ```
