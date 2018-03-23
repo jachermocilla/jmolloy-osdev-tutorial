@@ -14,6 +14,7 @@ int main(struct multiboot *mboot_ptr)
     monitor_clear();
 
     initialise_paging();
+
     monitor_write("Hello, paging world!\n");
 
     u32int *ptr = (u32int*)0xA0000000;
