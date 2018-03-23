@@ -7,7 +7,7 @@ SOURCES=boot.o main.o monitor.o common.o descriptor_tables.o isr.o interrupt.o g
         kheap.o paging.o
 
 CFLAGS=-m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector
-LDFLAGS=-Tlink.ld -m elf_i386 
+LDFLAGS=-Tlink.ld -m elf_i386
 ASFLAGS=-felf32
 
 all: $(SOURCES) link
