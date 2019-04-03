@@ -15,6 +15,8 @@ int main(struct multiboot *mboot_ptr)
 
     asm volatile("int $0x3");
     asm volatile("int $0x4");
+    asm volatile("int $0x4");
+    asm volatile("int $0x4");
     
     return 0;
 }

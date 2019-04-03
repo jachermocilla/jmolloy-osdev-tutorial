@@ -191,11 +191,11 @@ void page_fault(registers_t regs)
 
     // Output an error message.
     monitor_write("Page fault! ( ");
-    if (present) {monitor_write("present ");}
+    if (present) {monitor_write("present,protection violation ");}
     if (rw) {monitor_write("read-only ");}
     if (us) {monitor_write("user-mode ");}
     if (reserved) {monitor_write("reserved ");}
-    monitor_write(") at 0x");
+    monitor_write(") at ");
     monitor_write_hex(faulting_address);
     monitor_write("\n");
     PANIC("Page fault");
