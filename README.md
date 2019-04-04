@@ -16,11 +16,11 @@ $ gsettings set org.gnome.desktop.media-handling automount-open false
 
 ```
 $ ./update.sh <folder name>
-$ qemu-system-i386 -fda floppy.img boot -a
+$ qemu-system-i386 -fda floppy.img -boot a
 ```
 
 If the folder name ends with "_initrd"
 ```
 $ ./update-initrd.sh <folder name>
-$ qemu-system-i386 -fda floppy-initrd.img boot -a
+$ qemu-system-i386 -fda floppy-initrd.img -boot a
 ```
