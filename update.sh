@@ -9,10 +9,10 @@ cp kernel $CURRENT
 make clean
 cd $CURRENT
 
-sudo /sbin/losetup /dev/loop0 floppy.img
+sudo /sbin/losetup /dev/loop1000 floppy.img
 mkdir mnt
-sudo mount /dev/loop0 mnt
+sudo mount /dev/loop1000 mnt
 sudo cp kernel mnt/kernel
-sudo umount /dev/loop0
-sudo /sbin/losetup -d /dev/loop0
+sudo umount /dev/loop1000
+sudo /sbin/losetup -d /dev/loop1000
 rmdir mnt
