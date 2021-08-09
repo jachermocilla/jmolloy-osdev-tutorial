@@ -268,7 +268,9 @@ void *alloc(u32int size, u8int page_align, heap_t *heap)
     }
 
     // If we need to page-align the data, do it now and make a new hole in front of our block.
-    if (page_align && orig_hole_pos&0xFFFFF000)
+    //if (page_align && orig_hole_pos&0xFFFFF000)
+   //https://forum.osdev.org/viewtopic.php?f=1&t=25748&start=0
+   if (page_align && orig_hole_pos + (sizeof(header_t)) &0xFFFFF000)
     {
         u32int new_location   = orig_hole_pos + 0x1000 /* page size */ - (orig_hole_pos&0xFFF) - sizeof(header_t);
         header_t *hole_header = (header_t *)orig_hole_pos;
