@@ -13,6 +13,7 @@ sudo /sbin/losetup /dev/loop1000 floppy.img
 mkdir mnt
 sudo mount /dev/loop1000 mnt
 sudo cp kernel mnt/kernel
+sleep 2
 sudo umount /dev/loop1000
 sudo /sbin/losetup -d /dev/loop1000
 rmdir mnt
