@@ -16,10 +16,10 @@
 
 # Part I — Foundations
 
-* [Chapter 1 — Fixed-Width Integers, Types, and Portability](ch01.md)
-* [Chapter 2 — Structures, Memory Layout, and Hardware Interfaces](ch02.md)
-* [Chapter 3 — Pointers, Memory, and Addressing](ch03.md)
-* [Chapter 4 — Functions, the Stack, and Program Execution](ch04.md)
+* [Chapter 1 — Types and Portability](ch01.md)
+* [Chapter 2 — Structures, Packing, and Hardware Interaction](ch02.md)
+* [Chapter 3 — Pointers and Memory](ch03.md)
+* [Chapter 4 — Inline Assembly and Talking to Hardware](ch04.md)
 
 ---
 
