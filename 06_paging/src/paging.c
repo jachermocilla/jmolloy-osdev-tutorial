@@ -118,6 +118,7 @@ void initialise_paging()
     
     // Let's make a page directory.
     kernel_directory = (page_directory_t*)kmalloc_a(sizeof(page_directory_t));
+    memset(kernel_directory, 0, sizeof(page_directory_t));
     current_directory = kernel_directory;
 
     // We need to identity map (phys addr = virt addr) from
@@ -165,6 +166,7 @@ page_t *get_page(u32int address, int make, page_directory_t *dir)
     {
         u32int tmp;
         dir->tables[table_idx] = (page_table_t*)kmalloc_ap(sizeof(page_table_t), &tmp);
+        memset(dir->tables[table_idx], 0, 0x1000);
         dir->tablesPhysical[table_idx] = tmp | 0x7; // PRESENT, RW, US.
         return &dir->tables[table_idx]->pages[address%1024];
     }
