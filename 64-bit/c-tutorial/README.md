@@ -25,16 +25,16 @@
 
 # Part II — Systems Programming in C
 
-* [Chapter 5 — Function Pointers, Interrupt Handlers, and Callback Design](ch05.md)
+* [Chapter 5 — Interrupts, Function Pointers, and Event-Driven Programming](ch05.md)
 * [Chapter 6 — Dynamic Memory Management](ch06.md)
-* [Chapter 7 — The Build System](ch07.md)
-* [Chapter 8 — Defensive Programming and Debugging](ch08.md)
+* [Chapter 7 — Paging and Virtual Memory](ch07.md)
+* [Chapter 8 — Building a Heap](ch08.md)
 
 ---
 
 # Part III — From C to the Machine
 
-* [Chapter 9 — Macros, Bit Manipulation, and Low-Level C Idioms](ch09.md)
+* [Chapter 9 — Bit Manipulation and Flags](ch09.md)
 * [Chapter 10 — Linking C and Assembly](ch10.md)
 * [Chapter 11 — Building Reusable Kernel Code](ch11.md)
 * [Chapter 12 — The Freestanding C Environment](ch12.md)
