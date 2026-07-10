@@ -50,17 +50,6 @@
 
 ---
 
-# Appendices
-
-* [Appendix A — Common x86-64 Data Types and Registers](appendix/appendix-a.md)
-* [Appendix B — ASCII, Hexadecimal, and Binary Reference](appendix/appendix-b.md)
-* [Appendix C — GDB Cheat Sheet](appendix/appendix-c.md)
-* [Appendix D — QEMU Command-Line Reference](appendix/appendix-d.md)
-* [Appendix E — GCC Compiler Flags for Kernel Development](appendix/appendix-e.md)
-* [Appendix F — Suggested Reading](appendix/appendix-f.md)
-
----
-
 # How to Use This Book
 
 This book is intended to be read alongside the 64-bit operating system tutorial.
