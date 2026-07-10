@@ -1,18 +1,3 @@
-I actually think this chapter benefits from **restructuring** rather than following the source-code order.
-
-The code is organized around files (`gdt.s`, `descriptor_tables.c`, `interrupt.s`, etc.), but students don't naturally think that way. They think in terms of **questions**:
-
-1. *Why do we suddenly need a GDT?*
-2. *What problem does an IDT solve?*
-3. *What actually happens when an exception occurs?*
-4. *How do all these pieces work together?*
-
-Following *On Writing Well*, the chapter should teach one idea at a time, with each section answering one question before introducing the next. The code then becomes evidence of the concepts rather than the focus of the discussion.
-
-I would write the chapter something like this.
-
----
-
 # Chapter 4: Protecting the Processor
 
 The previous chapter produced visible output. The kernel booted, entered protected mode, and printed text on the screen. Although this was an important milestone, the processor was still operating with almost none of the mechanisms required by a modern operating system.
