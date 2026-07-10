@@ -1,11 +1,3 @@
-This chapter is arguably **the most important conceptual milestone** in the book. Up until now, the operating system has really been a sophisticated kernel that runs only trusted code. This chapter answers the question:
-
-> **How does an operating system safely run someone else's program?**
-
-I would make that the central theme. I also would avoid focusing on the GDT, TSS, or `iret` until after students understand *why* those mechanisms exist.
-
----
-
 # Chapter 10: User Mode and Loading the First User Program
 
 Up to this point, every instruction executed by the operating system has run with complete control over the processor. Every task created by the scheduler has executed inside the kernel, sharing the same address space and possessing unrestricted access to memory, hardware devices, and processor registers.
