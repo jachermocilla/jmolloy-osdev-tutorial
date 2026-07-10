@@ -2,130 +2,84 @@
 
 ## A Practical Guide to Reading and Writing 64-Bit Operating System Code
 
-### Table of Contents
-
-* **Introduction**
+> A companion textbook for the 64-bit Operating System Tutorial.
 
 ---
 
-### Part I — Foundations
+# Table of Contents
 
-**ch01.md** — Fixed-Width Integers, Types, and Portability
+## Introduction
 
-Understanding integer types, architecture-independent programming, hexadecimal notation, signed and unsigned arithmetic, integer overflow, addresses as data, and the basic data representations used throughout the kernel.
-
-**ch02.md** — Structures, Memory Layout, and Hardware Interfaces
-
-Structures, alignment, padding, packed structures, hardware-defined layouts, register representations, and why binary compatibility matters.
-
-**ch03.md** — Pointers, Memory, and Addressing
-
-Pointers, pointer arithmetic, arrays, casting, memory-mapped I/O, `volatile`, addresses versus values, and understanding memory through kernel examples.
-
-**ch04.md** — Functions, the Stack, and Program Execution
-
-Function calls, stack frames, recursion, parameter passing, local variables, return values, stack growth, and the execution model of C.
+* [Introduction](introduction.md)
 
 ---
 
-### Part II — Systems Programming in C
+# Part I — Foundations
 
-**ch05.md** — Function Pointers, Interrupt Handlers, and Callback Design
-
-Function pointers, dispatch tables, interrupt handlers, callback mechanisms, and dynamic control flow.
-
-**ch06.md** — Dynamic Memory Management
-
-The placement allocator, kernel heap, paging-aware allocation, `kmalloc()`, memory ownership, and allocation strategies.
-
-**ch07.md** — The Build System
-
-Compilation, preprocessing, assembling, linking, linker scripts, compiler flags, ELF files, and how a kernel becomes executable.
-
-**ch08.md** — Defensive Programming and Debugging
-
-Assertions, panic handlers, logging, debugging strategies, QEMU, GDB, and systematic approaches to diagnosing kernel failures.
+* [Chapter 1 — Fixed-Width Integers, Types, and Portability](ch01.md)
+* [Chapter 2 — Structures, Memory Layout, and Hardware Interfaces](ch02.md)
+* [Chapter 3 — Pointers, Memory, and Addressing](ch03.md)
+* [Chapter 4 — Functions, the Stack, and Program Execution](ch04.md)
 
 ---
 
-### Part III — From C to the Machine
+# Part II — Systems Programming in C
 
-**ch09.md** — Macros, Bit Manipulation, and Low-Level C Idioms
-
-The C preprocessor, compile-time constants, macros, bit masks, register manipulation, inline functions, and common kernel programming techniques.
-
-**ch10.md** — Linking C and Assembly
-
-Calling conventions, the ABI, stack frames, register preservation, inline assembly, interrupt stubs, and context switching.
-
-**ch11.md** — Building Reusable Kernel Code
-
-Header files, source files, declarations, definitions, include guards, separate compilation, modules, Makefiles, and linker organization.
-
-**ch12.md** — The Freestanding C Environment
-
-Hosted versus freestanding C, writing your own runtime library, implementing common functions, startup code, and life without the standard library.
+* [Chapter 5 — Function Pointers, Interrupt Handlers, and Callback Design](ch05.md)
+* [Chapter 6 — Dynamic Memory Management](ch06.md)
+* [Chapter 7 — The Build System](ch07.md)
+* [Chapter 8 — Defensive Programming and Debugging](ch08.md)
 
 ---
 
-### Part IV — Becoming a Systems Programmer
+# Part III — From C to the Machine
 
-**ch13.md** — Reading and Writing Kernel Code
-
-Developing strategies for exploring a large codebase, tracing execution, understanding subsystem boundaries, and navigating unfamiliar source files.
-
-**ch14.md** — Debugging a Kernel
-
-Kernel debugging with QEMU and GDB, interpreting crashes, panic handlers, assertions, debugging memory errors, and disciplined debugging practices.
-
-**ch15.md** — Thinking Like a Kernel Programmer
-
-Design philosophy, common C idioms, layered architectures, modular design, defensive programming, mechanism versus policy, and engineering patterns found in modern kernels.
-
-**ch16.md** — Learning by Experiment
-
-A systematic workflow for studying kernel code through experimentation, observation, hypothesis testing, version control, and continuous learning.
+* [Chapter 9 — Macros, Bit Manipulation, and Low-Level C Idioms](ch09.md)
+* [Chapter 10 — Linking C and Assembly](ch10.md)
+* [Chapter 11 — Building Reusable Kernel Code](ch11.md)
+* [Chapter 12 — The Freestanding C Environment](ch12.md)
 
 ---
 
-## Appendix (Suggested)
+# Part IV — Becoming a Systems Programmer
 
-**appendix-a.md** — Common x86-64 Data Types and Registers
-
-**appendix-b.md** — ASCII Table, Hexadecimal, and Binary Reference
-
-**appendix-c.md** — GDB Cheat Sheet
-
-**appendix-d.md** — QEMU Command-Line Reference
-
-**appendix-e.md** — Common GCC Compiler Flags for Kernel Development
-
-**appendix-f.md** — Suggested Reading
-
-* *The C Programming Language* (Kernighan & Ritchie)
-* *Expert C Programming: Deep C Secrets* (Peter van der Linden)
-* *Modern C* (Jens Gustedt)
-* *Operating Systems: Three Easy Pieces*
-* Intel® 64 and IA-32 Architectures Software Developer's Manual
-* AMD64 Architecture Programmer's Manual
-* Linux Kernel Documentation
-* OSDev Wiki
+* [Chapter 13 — Reading and Writing Kernel Code](ch13.md)
+* [Chapter 14 — Debugging a Kernel](ch14.md)
+* [Chapter 15 — Thinking Like a Kernel Programmer](ch15.md)
+* [Chapter 16 — Learning by Experiment](ch16.md)
 
 ---
 
-## Recommended Reading Order
+# Appendices
 
-Read the chapters sequentially.
+* [Appendix A — Common x86-64 Data Types and Registers](appendix/appendix-a.md)
+* [Appendix B — ASCII, Hexadecimal, and Binary Reference](appendix/appendix-b.md)
+* [Appendix C — GDB Cheat Sheet](appendix/appendix-c.md)
+* [Appendix D — QEMU Command-Line Reference](appendix/appendix-d.md)
+* [Appendix E — GCC Compiler Flags for Kernel Development](appendix/appendix-e.md)
+* [Appendix F — Suggested Reading](appendix/appendix-f.md)
+
+---
+
+# How to Use This Book
+
+This book is intended to be read alongside the 64-bit operating system tutorial.
 
 For each chapter:
 
-1. Read the corresponding chapter in this book.
-2. Read the matching `README.md` in the operating-system tutorial.
+1. Read the chapter in this book.
+2. Read the corresponding `README.md` in the operating-system tutorial.
 3. Build the kernel.
-4. Run it in QEMU.
+4. Boot it in QEMU.
 5. Modify one piece of code.
-6. Observe the result.
+6. Observe the results.
 7. Record what you learned.
 
-This book is designed to be read alongside the operating-system tutorial. The source code is your laboratory. The chapters explain the language and the engineering decisions behind it. The combination of careful reading and deliberate experimentation will develop the skills needed to understand and extend modern operating systems.
+Programming is learned by doing. The source code is your laboratory, and each chapter is designed to help you understand not only *what* the kernel does, but *why* it is written that way.
+
+---
+
+# License
+
+See the repository's LICENSE file for licensing information.
 
