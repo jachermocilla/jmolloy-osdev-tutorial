@@ -6,7 +6,7 @@
 SOURCES=boot.o main.o monitor.o common.o descriptor_tables.o isr.o interrupt.o gdt.o timer.o \
         kheap.o paging.o ordered_array.o fs.o initrd.o task.o process.o
 
-CFLAGS=-m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector
+CFLAGS=-m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie -fno-pic -ffreestanding
 LDFLAGS=-Tlink.ld -m elf_i386
 ASFLAGS=-felf32
 

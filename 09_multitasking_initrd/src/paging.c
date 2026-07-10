@@ -210,7 +210,7 @@ void page_fault(registers_t regs)
     asm volatile("mov %%cr2, %0" : "=r" (faulting_address));
     
     // The error code gives us details of what happened.
-    int present   = !(regs.err_code & 0x1); // Page not present
+    int present   = regs.err_code & 0x1;    // Page present?
     int rw = regs.err_code & 0x2;           // Write operation?
     int us = regs.err_code & 0x4;           // Processor was in user-mode?
     int reserved = regs.err_code & 0x8;     // Overwritten CPU-reserved bits of page entry?
@@ -218,11 +218,11 @@ void page_fault(registers_t regs)
 
     // Output an error message.
     monitor_write("Page fault! ( ");
-    if (present) {monitor_write("present ");}
+    if (!present) {monitor_write("not-present ");}
     if (rw) {monitor_write("read-only ");}
     if (us) {monitor_write("user-mode ");}
     if (reserved) {monitor_write("reserved ");}
-    monitor_write(") at 0x");
+    monitor_write(") at ");
     monitor_write_hex(faulting_address);
     monitor_write(" - EIP: ");
     monitor_write_hex(regs.eip);
@@ -235,7 +235,7 @@ static page_table_t *clone_table(page_table_t *src, u32int *physAddr)
     // Make a new page table, which is page aligned.
     page_table_t *table = (page_table_t*)kmalloc_ap(sizeof(page_table_t), physAddr);
     // Ensure that the new table is blank.
-    memset(table, 0, sizeof(page_directory_t));
+    memset(table, 0, sizeof(page_table_t));
 
     // For every entry in the table...
     int i;

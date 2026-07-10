@@ -35,3 +35,14 @@ copy_page_physical:
     popf                  ; Pop EFLAGS back.
     pop ebx               ; Get the original value of EBX back.
     ret
+
+[GLOBAL perform_task_switch]
+perform_task_switch:
+    mov ecx, [esp+4]      ; EIP
+    mov eax, [esp+8]      ; physical address of new page directory
+    mov ebp, [esp+12]     ; EBP
+    mov esp, [esp+16]     ; ESP
+    mov cr3, eax          ; set the page directory
+    mov eax, 0x12345      ; magic value so switch_task() knows it just switched
+    sti
+    jmp ecx
