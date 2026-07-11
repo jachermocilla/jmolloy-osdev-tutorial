@@ -4,17 +4,22 @@
 
 # Build configuration
 
+GIT_HASH   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%d)
+
 BUILD = build
 MAKEFILE = Makefile
 OUTPUT_FILENAME = book
 METADATA = metadata.yml
 CHAPTERS = chapters/*.md
 TOC = --toc --toc-depth 2 
-METADATA_ARGS = --metadata-file $(METADATA)
+METADATA_ARGS = --metadata-file $(METADATA) \
+                -M date="$(BUILD_DATE) · $(GIT_HASH)"
 IMAGES = $(shell find images -type f)
 TEMPLATES = $(shell find templates/ -type f)
 COVER_IMAGE = images/cover.png
 MATH_FORMULAS = --webtex
+
 
 # Chapters content
 CONTENT = awk 'FNR==1 && NR!=1 {print "\n\n"}{print}' $(CHAPTERS)
