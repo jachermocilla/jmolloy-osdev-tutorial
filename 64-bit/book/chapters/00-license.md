@@ -15,6 +15,6 @@ The full license text is available at <https://creativecommons.org/licenses/by/4
 
 To attribute this work, you may use:
 
-> *Mastering C for Kernel Development* by JAC Hermocilla is licensed under CC BY 4.0. Source: <https://github.com/jachermocilla/jmolloy-osdev-tutorial>
+> *Mastering C for Kernel Development* by JAC Hermocilla is licensed under CC BY 4.0. Source: <https://github.com/jachermocilla/jmolloy-osdev-tutorial/tree/master/64-bit/book>
 
 **Note on source code:** Code listings reproduced from or based on the accompanying 64-bit operating system tutorial remain subject to that project's original license. The CC BY 4.0 license above applies to the textual content of this book.
