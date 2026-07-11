@@ -399,7 +399,7 @@ $if(logo)$
 \logo{\includegraphics{$logo$}}
 $endif$
 $endif$
-
+\usepackage{graphicx} 
 \begin{document}
 $if(has-frontmatter)$
 \frontmatter
