@@ -16,37 +16,37 @@
 
 # Part I — Foundations
 
-* [Chapter 1 — Types and Portability](ch01.md)
-* [Chapter 2 — Structures, Packing, and Hardware Interaction](ch02.md)
-* [Chapter 3 — Pointers and Memory](ch03.md)
-* [Chapter 4 — Inline Assembly and Talking to Hardware](ch04.md)
+* [Chapter 1 — Types and Portability](./chapters/ch01.md)
+* [Chapter 2 — Structures, Packing, and Hardware Interaction](./chapters/ch02.md)
+* [Chapter 3 — Pointers and Memory](./chapters/ch03.md)
+* [Chapter 4 — Inline Assembly and Talking to Hardware](./chapters/ch04.md)
 
 ---
 
 # Part II — Systems Programming in C
 
-* [Chapter 5 — Interrupts, Function Pointers, and Event-Driven Programming](ch05.md)
-* [Chapter 6 — Dynamic Memory Management](ch06.md)
-* [Chapter 7 — Paging and Virtual Memory](ch07.md)
-* [Chapter 8 — Building a Heap](ch08.md)
+* [Chapter 5 — Interrupts, Function Pointers, and Event-Driven Programming](./chapters/ch05.md)
+* [Chapter 6 — Dynamic Memory Management](./chapters/ch06.md)
+* [Chapter 7 — Paging and Virtual Memory](./chapters/ch07.md)
+* [Chapter 8 — Building a Heap](./chapters/ch08.md)
 
 ---
 
 # Part III — From C to the Machine
 
-* [Chapter 9 — Bit Manipulation and Flags](ch09.md)
-* [Chapter 10 — Linking C and Assembly](ch10.md)
-* [Chapter 11 — Building Reusable Kernel Code](ch11.md)
-* [Chapter 12 — The Freestanding C Environment](ch12.md)
+* [Chapter 9 — Bit Manipulation and Flags](./chapters/ch09.md)
+* [Chapter 10 — Linking C and Assembly](./chapters/ch10.md)
+* [Chapter 11 — Building Reusable Kernel Code](./chapters/ch11.md)
+* [Chapter 12 — The Freestanding C Environment](./chapters/ch12.md)
 
 ---
 
 # Part IV — Becoming a Systems Programmer
 
-* [Chapter 13 — Reading and Writing Kernel Code](ch13.md)
-* [Chapter 14 — Debugging a Kernel](ch14.md)
-* [Chapter 15 — Thinking Like a Kernel Programmer](ch15.md)
-* [Chapter 16 — Learning by Experiment](ch16.md)
+* [Chapter 13 — Reading and Writing Kernel Code](./chapters/ch13.md)
+* [Chapter 14 — Debugging a Kernel](./chapters/ch14.md)
+* [Chapter 15 — Thinking Like a Kernel Programmer](./chapters/ch15.md)
+* [Chapter 16 — Learning by Experiment](./chapters/ch16.md)
 
 ---
 
