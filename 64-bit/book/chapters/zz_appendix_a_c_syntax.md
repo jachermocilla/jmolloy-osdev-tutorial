@@ -1,4 +1,4 @@
-# Appendix - C Syntax Essentials
+# Appendix A - C Syntax Essentials
 
 ## A Quick Reference for Reading the Tutorial
 
