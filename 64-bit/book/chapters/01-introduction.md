@@ -16,7 +16,7 @@ By the end of this book, opening an unfamiliar kernel source file should no long
 
 ## Who This Book Is For
 
-This book is intended primarily for undergraduate students studying
+This book is intended primarily for my undergraduate students in `CMSC 125`. But the book can be used by students in 
 
 * Computer Science,
 * Computer Engineering,
@@ -26,7 +26,7 @@ This book is intended primarily for undergraduate students studying
 * Embedded Systems,
 * Computer Architecture.
 
-It assumes that you already know the fundamentals of the C language. Specifically, you should already understand
+It assumes that you already know some of the fundamentals of the C language (taught in `CMSC 21` and `CMSC 123`). Specifically, you should already understand
 
 * variables,
 * arithmetic expressions,
@@ -36,7 +36,9 @@ It assumes that you already know the fundamentals of the C language. Specificall
 * arrays,
 * basic pointers.
 
-You do **not** need prior experience writing operating systems, and you do **not** need to know assembly language in advance. Whenever assembly appears, it is introduced only to explain how it interacts with C. Likewise, advanced processor concepts are introduced only when they become necessary for understanding the code. This book teaches enough architecture to make the C code meaningful.
+Check the Appendix for a refresher.
+
+You do **not** need prior experience writing operating systems, and you do **not** need to know assembly language in advance. Whenever assembly appears (`CMSC 131`), it is introduced only to explain how it interacts with C. Likewise, advanced processor concepts (`CMSC 132`) are introduced only when they become necessary for understanding the code. This book teaches enough architecture to make the C code meaningful.
 
 ---
 
