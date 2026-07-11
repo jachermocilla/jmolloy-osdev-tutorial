@@ -3,4 +3,7 @@
 Made with the ClaudeAI assistance
 
 It is highly recommended that you go through the original 32-bit version of the tutorial first 
-before doing the tutorials here.
+before doing the materials here.
+
+In each tutorial, there is a README.md file that discusses the porting process. There is also 
+a DISCUSSION.md that talks about the concepts.
