@@ -1,6 +1,6 @@
 # jmolloy-osdev-tutorial
 
-64-bit port is available [here](./64-bit)
+🆕 64-bit port is available [here](./64-bit)
 
 Source code from http://www.jamesmolloy.co.uk/tutorial_html ( [mirror](https://jachermocilla.github.io/jmolloy-osdev-tutorial) )
 
