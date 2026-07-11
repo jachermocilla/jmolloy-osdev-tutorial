@@ -1,13 +1,13 @@
 ---
 title: Mastering C for Kernel Development
 author: JAC Hermocilla
-rights: MIT License
+cover-image: "./images/cover.png"
+rights: CC-BY 4.0
 lang: en-US
 mainlang: english
 otherlang: english
-tags: [pandoc, book, my-book, etc]
+tags: [C, kernel dev]
 date:
-cover-image: "./images/cover.png"
 #abstract: |
 #  This book teaches C in the context of kernel development. It discusses C constructs and programming idioms that will allow students with basic C programming knowledge to read and write kernel code. This book is dedicated to my students in CMSC 125: Operating Systems.  
 mainfont: Times New Roman
