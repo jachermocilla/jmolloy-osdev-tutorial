@@ -38,7 +38,7 @@ It assumes that you already know some of the fundamentals of the C language (tau
 
 Check the Appendix for a refresher.
 
-You do **not** need prior experience writing operating systems, and you do **not** need to know assembly language in advance. Whenever assembly appears (`CMSC 131`), it is introduced only to explain how it interacts with C. Likewise, advanced processor concepts (`CMSC 132`) are introduced only when they become necessary for understanding the code. This book teaches enough architecture to make the C code meaningful.
+You do **not** need prior experience writing operating systems, and you do **not** need to know assembly language in advance. Whenever assembly appears (taught in `CMSC 131`), it is introduced only to explain how it interacts with C. Likewise, advanced processor concepts (taught in `CMSC 132`) are introduced only when they become necessary for understanding the code. This book teaches enough architecture to make the C code meaningful.
 
 ---
 
