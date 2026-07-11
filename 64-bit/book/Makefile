@@ -9,7 +9,7 @@ MAKEFILE = Makefile
 OUTPUT_FILENAME = book
 METADATA = metadata.yml
 CHAPTERS = chapters/*.md
-TOC = --toc --toc-depth 2
+TOC = --toc --toc-depth 2 
 METADATA_ARGS = --metadata-file $(METADATA)
 IMAGES = $(shell find images -type f)
 TEMPLATES = $(shell find templates/ -type f)
@@ -33,7 +33,7 @@ CONTENT_FILTERS = tee # Use this to add sed filters or other piped commands
 
 ARGS = $(TOC) $(MATH_FORMULAS) $(METADATA_ARGS) $(FILTER_ARGS) $(DEBUG_ARGS)
 	
-PANDOC_COMMAND = pandoc
+PANDOC_COMMAND = pandoc --top-level-division=chapter
 
 # Per-format options
 
