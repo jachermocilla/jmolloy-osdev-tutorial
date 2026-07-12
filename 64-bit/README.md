@@ -8,4 +8,3 @@ before doing the materials here.
 In each tutorial, there is a README.md file that discusses the porting process. There is also 
 a DISCUSSION.md that talks about the concepts.
 
-Read: [Mastering C for Kernel Development](./book/mastering-c-for-kernel-dev_book.pdf)
