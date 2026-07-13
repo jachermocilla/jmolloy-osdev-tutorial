@@ -9,9 +9,9 @@ SOURCES=boot.o main.o monitor.o common.o descriptor_tables.o isr.o interrupt.o g
 
 CFLAGS=-m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
        -fno-pie -fno-pic -ffreestanding -mno-red-zone \
-       -mno-mmx -mno-sse -mno-sse2 -Wall
+       -mno-mmx -mno-sse -mno-sse2 -Wall -g
 LDFLAGS=-T link.ld -m elf_x86_64 -z max-page-size=0x1000 -z noexecstack
-ASFLAGS=-felf64
+ASFLAGS=-felf64 -g -F dwarf
 
 all: $(SOURCES) link
 
