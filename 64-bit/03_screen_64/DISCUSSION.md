@@ -1,20 +1,20 @@
-# Understanding a Minimal 64-bit Kernel: Printing "Hello, World!"
+# Chapter 3: Reaching Long Mode, and Printing One Line
 
-The first successful operating system kernel often prints a single message to the screen:
+The first thing a kernel usually says is:
 
 > Hello, world!
 
-Although this output appears simple, producing it requires a remarkable amount of preparation. Before a single character can be displayed, the processor must be transformed from the environment provided by the bootloader into a fully operational 64-bit execution environment. Most of the code in this stage is therefore devoted not to printing text, but to preparing the processor itself.
+Thirteen characters, and almost none of the work is in producing them. Before a single character can appear, the processor has to be carried from the environment the bootloader left it in to a working 64-bit machine, and nearly every line of this chapter's assembly exists to do that carrying.
 
-This chapter explains the concepts behind that transition. Rather than focusing on individual instructions, we examine the ideas that make the bootstrap work. Understanding these concepts is far more valuable than memorizing the assembly code because every modern 64-bit operating system follows essentially the same sequence during startup.
+This chapter is about the ideas behind that transition rather than the instructions that implement it. The ideas are the durable part: every 64-bit operating system on this architecture performs the same sequence, in the same order, for the same reasons.
 
 ---
 
-# The Journey from Power-On to a Running Kernel
+# From Power-On to a Running Kernel
 
-When a computer is powered on, the processor does not immediately begin executing your operating system. Instead, a sequence of software components gradually prepares the machine.
+A processor does not wake up running your kernel. Several layers of software hand it along.
 
-```
+```text
 +----------------+
 | Power On       |
 +----------------+
@@ -37,123 +37,51 @@ When a computer is powered on, the processor does not immediately begin executin
 +----------------+
 ```
 
-The firmware initializes the hardware and eventually transfers control to a bootloader. The bootloader locates the kernel on disk, loads it into memory, and jumps to its entry point.
+Firmware brings the hardware up and hands off to a bootloader; the bootloader finds the kernel, loads it into memory, and jumps to its entry point. That is where this chapter begins.
 
-At this point, your kernel finally begins executing.
+The processor is not in 64-bit mode when it arrives.
 
-However, the processor is **not yet in 64-bit mode**.
-
-This surprises many students. Since the processor is physically a 64-bit processor, it seems natural to assume that it begins executing 64-bit instructions. In reality, the processor always starts in a simpler compatibility state. The operating system is responsible for enabling the advanced features required for modern execution.
+This surprises people, reasonably. The chip is a 64-bit chip, so why is it not executing 64-bit instructions? Because compatibility is worth more to the industry than convenience is to you: an x86 processor still starts in a mode a 1985 operating system would recognise, and every advanced feature since is something software must ask for. Long mode is opt-in, and asking for it is your job.
 
 ---
 
-# The Environment Provided by the Bootloader
+# What the Bootloader Hands You
 
-The bootloader gives the kernel a predictable starting point. This simplifies operating system development because the kernel does not need to understand every detail of the firmware.
+The value of a bootloader that follows a specification is that the kernel knows exactly what it is walking into.
 
-The initial environment has several important characteristics.
+```text
+Processor state at the kernel's entry point
 
-* The processor executes in **32-bit protected mode**.
-* Paging is disabled.
-* A stack is not guaranteed.
-* The bootloader provides information about available memory and hardware.
-* Interrupt handling has not yet been configured by the kernel.
-
-Conceptually, the processor begins in the following state.
-
-```
-Processor State
-
-Mode        : 32-bit Protected Mode
-Paging      : Disabled
-Interrupts  : Disabled
-Stack        : Kernel must create one
+Mode        32-bit protected mode
+Paging      OFF
+Interrupts  masked
+Stack       none -- the kernel must supply its own
+Registers   one pointer to a structure describing the machine
 ```
 
-Although this environment is sufficient for running ordinary 32-bit programs, it is insufficient for a modern 64-bit operating system.
+That last item is the bootloader's gift: a table of what memory exists, what modules were loaded, and what the firmware reported. The kernel stashes it and ignores it for five chapters, until chapter 8 needs to find a file.
 
-The kernel must perform the remaining initialization itself.
+The rest is a perfectly good environment for a 32-bit program and useless for a 64-bit one.
 
 ---
 
-# Why Switching to 64-bit Is Necessary
+# The Chicken and the Egg
 
-Modern operating systems take advantage of features that do not exist in 32-bit mode.
+Here is the whole problem of this chapter in two facts.
 
-Among the most important are:
+The processor arrives with **paging off**. Long mode **requires paging** — not as a recommendation or an optimization, but as a precondition. There is no 64-bit mode without address translation; every instruction executed in long mode assumes its addresses pass through page tables.
 
-* vastly larger virtual address spaces,
-* additional processor registers,
-* improved calling conventions,
-* more efficient instruction encoding,
-* support for modern processor features.
+So the kernel must build a page table before it can run a single 64-bit instruction, which means building it in 32-bit assembly, which means the most 64-bit-specific structure in the system is constructed by code that cannot use 64-bit registers.
 
-The difference between 32-bit and 64-bit execution is much more significant than simply changing the size of integers.
-
-For the processor, entering long mode fundamentally changes how memory is translated, how instructions are decoded, and how software interacts with the hardware.
+You cannot recompile your way out of this. `-m64` produces instructions the processor will not decode yet. The bootstrap has to be written in the mode you are leaving, to construct the thing that lets you leave it.
 
 ---
 
-# Long Mode Cannot Be Entered Directly
+# Identity Mapping
 
-One of the most important ideas in x86-64 architecture is that long mode cannot simply be turned on with a single switch.
+The tables the bootstrap builds do the least interesting thing a page table can do: they map every address to itself.
 
-Instead, the processor must pass through several carefully ordered stages.
-
-```
-Protected Mode
-       |
-       |
-       v
-Build Page Tables
-       |
-       v
-Enable Long Mode
-       |
-       v
-Enable Paging
-       |
-       v
-Compatibility Mode
-       |
-       v
-Far Jump
-       |
-       v
-64-bit Long Mode
-```
-
-Each stage prepares the processor for the next one.
-
-Skipping any step prevents the processor from entering long mode successfully.
-
----
-
-# Why Paging Becomes Mandatory
-
-Students often encounter paging long before they understand why it exists.
-
-In earlier chapters, paging may have seemed like an optional memory-management technique.
-
-In x86-64, it is no longer optional.
-
-Long mode **requires paging**.
-
-This design decision reflects the way modern processors manage memory. Every instruction executed in long mode assumes that addresses are translated through page tables.
-
-Without those page tables, the processor simply cannot operate.
-
-This means the kernel must construct an initial virtual memory system before it can execute a single 64-bit instruction.
-
----
-
-# Identity Mapping: Making the Transition Simple
-
-The first page tables created by this tutorial perform a very simple mapping known as **identity mapping**.
-
-Identity mapping means that every virtual address initially refers to the same physical address.
-
-```
+```text
 Virtual Memory          Physical Memory
 
 0x00000000  --------->  0x00000000
@@ -162,251 +90,223 @@ Virtual Memory          Physical Memory
 0x00100000  --------->  0x00100000
 ```
 
-Nothing appears to change.
+That is the point. The paging hardware switches on and nothing moves. The kernel stays at the megabyte mark where it was loaded, the video buffer stays at `0xB8000`, no address in any existing line of code needs revisiting, and no relocation is required.
 
-The processor now translates addresses through the paging hardware, but every address still points to exactly the same location.
-
-This greatly simplifies the bootstrap because existing code continues to work without modification.
-
-The VGA framebuffer remains at the familiar address.
-
-The kernel remains at its original load address.
-
-No relocation is required.
-
-Identity mapping serves as a temporary bridge between physical memory and the virtual memory system that the kernel will construct later.
+Identity mapping is a bridge — a way to satisfy the processor's demand for page tables without yet having to think about virtual memory. Chapter 6 will take it seriously. Today it exists to be ignored.
 
 ---
 
-# The Four-Level Paging Hierarchy
+# Four Levels, and the Shortcut
 
-Unlike 32-bit processors, which typically use a two-level page table structure, x86-64 introduces a hierarchy consisting of four levels.
+A 64-bit processor translates addresses through four tables, each one 4096 bytes holding 512 entries of eight bytes.
 
-```
-PML4
- │
- ▼
-PDPT
- │
- ▼
-Page Directory
- │
- ▼
-Page Table
- │
- ▼
+```text
+PML4  (Page Map Level 4)
+  |
+  v
+PDPT  (Page Directory Pointer Table)
+  |
+  v
+PD    (Page Directory)
+  |
+  v
+PT    (Page Table)
+  |
+  v
 Physical Memory
 ```
 
-Each level narrows the search until the processor finally identifies the physical memory location corresponding to a virtual address.
+Filling all four levels to cover a gigabyte would mean thousands of entries, and the bootstrap does not need that kind of precision. There is a shortcut: set the page-size bit in a page-directory entry and the walk stops one level early, with that single entry mapping a **2 MiB page** directly.
 
-Although this hierarchy appears complicated at first, it offers enormous scalability.
+```text
+4 KiB pages                       one 2 MiB page
 
-The operating system can manage enormous virtual address spaces while allocating page tables only where they are needed.
++----+----+----+----+----+        +-------------------------+
+|Page|Page|Page|Page|Page| ...    |        One Page         |
++----+----+----+----+----+        +-------------------------+
+   512 entries per table            1 entry
+```
+
+So the bootstrap builds three tables, not four. One top-level table pointing at one second-level table pointing at one directory, whose 512 entries each map 2 MiB — and 512 × 2 MiB is exactly one gigabyte, identity-mapped, in a loop of four instructions.
+
+Each entry is the physical address of a 2 MiB frame with three bits set: present, writable, and page-size. Three bits and a shift are the entire memory model of this chapter.
+
+One precaution in the bootstrap is worth more than it looks. The tables live in `.bss`, and a multiboot loader is *supposed* to zero `.bss` before jumping to you. The bootstrap zeroes them anyway, because "supposed to" is not a guarantee, and the failure mode is unforgiving: one leftover byte with the present bit set is a valid mapping to a random physical address, and the processor will find it the instant paging comes on. Three page-sized `memset`s buy immunity from an entire genre of works-on-my-emulator bug.
 
 ---
 
-# Large Pages Simplify the Bootstrap
+# The Order of Operations
 
-Building complete page tables using ordinary 4 KiB pages requires thousands of entries.
+Long mode is not a switch. It is a sequence, and each step is a precondition for the next.
 
-Fortunately, the processor also supports **large pages**.
-
-Instead of mapping memory in small 4 KiB pieces, the kernel can map entire 2 MiB regions with a single entry.
-
+```text
+  cpuid          does this processor have long mode at all?
+     |
+     v
+  build tables   three tables, 1 GiB identity-mapped
+     |
+     v
+  CR4.PAE = 1    64-bit page-table entries are PAE's format
+     |
+     v
+  CR3 = &PML4    tell the MMU where the tables are
+     |
+     v
+  EFER.LME = 1   "I intend to enter long mode"
+     |
+     v
+  CR0.PG = 1     paging on -- and the CPU enters compatibility mode
+     |
+     v
+  lgdt + far jmp load a 64-bit code segment
+     |
+     v
+  64-bit long mode
 ```
-4 KiB Pages
 
-+----+----+----+----+----+
-|Page|Page|Page|Page|Page|
-+----+----+----+----+----+
+The check at the top costs ten instructions and is worth all of them. Skip it, run on a processor without long mode, and the failure is a silent triple fault and a reboot loop — no message, no fault, nothing to debug. Ten instructions buy an error message instead, and an error message is the difference between an afternoon and a minute.
 
+Three of these steps touch registers the chapter has not needed before. `CR4` holds feature switches, and the one being set enables **Physical Address Extension** — long mode's page-table entries are PAE's entries, so the format must be enabled before the tables mean anything. `CR3` holds the physical address of the top-level table. And the long-mode-enable bit is not in a control register at all: it lives in a **model-specific register**, a bank of chip-specific settings reachable only through a dedicated instruction pair that selects a register by number and reads or writes it in two halves.
 
-2 MiB Page
-
-+-------------------------+
-|        One Page         |
-+-------------------------+
-```
-
-Using large pages dramatically reduces the amount of initialization required during boot.
-
-Since this kernel only needs the first gigabyte of memory, large pages are an ideal choice.
+The order of the last two matters, and the distinction is worth naming. Setting the long-mode-enable bit declares an *intention* and changes nothing. Turning paging on is what acts on it. And the processor answers with a third bit — long-mode *active* — which it sets itself and which is your evidence that the request was granted. After boot, an emulator's monitor shows the register holding `0x500`: bit 8 is the bit you set, bit 10 is the bit the processor set for you.
 
 ---
 
-# Compatibility Mode: The Hidden Transition
+# Compatibility Mode: the Hidden Transition
 
-One concept that often confuses beginners is **compatibility mode**.
+Textbooks tend to describe protected mode becoming long mode. What actually happens has a step in between.
 
-Many textbooks describe the processor as moving directly from protected mode into long mode.
-
-The reality is more subtle.
-
-After paging is enabled, the processor enters an intermediate execution state.
-
-```
+```text
 Protected Mode
         |
         v
-Compatibility Mode
-        |
+Compatibility Mode      paging on, long mode active,
+        |               still decoding 32-bit instructions
         v
-Long Mode
+64-bit Long Mode
 ```
 
-Compatibility mode already uses the new paging system, but it continues executing 32-bit instructions.
+The moment paging comes on with long mode enabled, the processor *is* in long mode — and it is still executing 32-bit code, because the code segment it is currently running in is a 32-bit one. Everything about memory has changed; nothing about instruction decoding has.
 
-Only after a far jump loads a 64-bit code segment does the processor begin decoding instructions as true 64-bit instructions.
+The way out is a far jump into a code segment marked as 64-bit. The Global Descriptor Table is loaded, the jump reloads the code segment register from it, and the processor sees a descriptor with the long-mode bit set. The instruction *after* that jump is the first 64-bit instruction the kernel executes.
 
-This intermediate state exists because changing the execution mode of a processor is too significant to perform instantaneously.
-
-Compatibility mode provides a safe transition between the two architectures.
+Compatibility mode is not a mistake in the architecture. It exists because a processor cannot change what its instructions mean in the middle of an instruction stream, so the change is bound to the only operation that reloads the code segment. The transition needs a door, and the far jump is the door.
 
 ---
 
-# The Role of the Global Descriptor Table
+# Segmentation Is Almost Over
 
-Earlier x86 processors relied heavily on segmentation.
+Old x86 leaned on segmentation, dividing programs into code, data, and stack segments with bases and limits the processor checked on every access. That is not how this kernel — or any 64-bit kernel — manages memory.
 
-Programs were divided into code segments, data segments, stack segments, and many others.
+```text
+32-bit                      64-bit
 
-Modern 64-bit operating systems no longer use segmentation for memory management.
-
-Instead, paging performs almost all address translation.
-
-The Global Descriptor Table still exists, but its role is much smaller.
-
-```
-32-bit
-
-Segmentation
-      +
-Paging
-
-
-64-bit
-
-Paging
-   +
-Minimal Segmentation
+Segmentation                Paging
+     +                          +
+   Paging               minimal segmentation
 ```
 
-The processor still requires descriptors that identify executable code and writable data, but most of the complexity of segmentation disappears.
+The table survives, and most of what it used to say is now ignored: bases and limits mean nothing for code and data in long mode, and every segment spans everything. What is left is the handful of bits the processor still reads — whether a descriptor is code or data, which privilege level may use it, and whether it is 64-bit.
 
-This simplification is one reason modern operating systems rely almost entirely on paging.
+The whole descriptor table for this chapter is three entries: a mandatory null, a code segment, and a data segment. Paging does the rest, which is exactly the arrangement chapter 6 will start exploiting.
 
 ---
 
-# Entering the C Kernel
+# Arriving in C
 
-Once the processor reaches true long mode, the difficult part is finished.
+Once the far jump lands, the hard part is over and the kernel can call an ordinary C function.
 
-The kernel can finally begin executing ordinary C code.
-
-Conceptually, the transition looks like this.
-
-```
+```text
 Assembly Bootstrap
         |
+   check the CPU
         |
-Processor Initialization
+   build page tables
         |
-Memory Initialization
+   enable PAE, paging, long mode
         |
-Enable Long Mode
+   far jump
         |
         v
-main()
+      main()
 ```
 
-From this point onward, kernel development becomes much more familiar.
+The last few instructions before that call are a lesson in themselves. A 32-bit kernel hands its arguments to C on the stack, which is why the original of this file pushes the bootloader's pointer before calling. The 64-bit calling convention puts the first six integer arguments in registers instead, so the pointer goes into a register and nothing is pushed at all.
 
-The operating system can initialize devices, configure interrupts, manage memory, and eventually schedule processes.
+```text
+32-bit                        64-bit
 
-The bootstrap exists solely to reach this point safely.
+Stack                         Registers
+
+Argument 3                    RDI  first argument
+Argument 2                    RSI  second
+Argument 1                    RDX  third
+Return Address                RCX  fourth
+```
+
+This is the first appearance of a difference that will keep appearing. The interface between assembly and C is not a detail of the compiler — it is a contract, it changed completely between the two architectures, and every hand-written stub in the chapters ahead has to honour it.
 
 ---
 
-# Calling Conventions Change in 64-bit Systems
+# The Compiler Assumes a World That Does Not Exist
 
-Moving to 64-bit mode changes more than the processor registers.
+A C compiler targeting x86-64 makes assumptions that are correct everywhere except here, and each one has to be turned off explicitly.
 
-It also changes how functions communicate.
+The 64-bit calling convention reserves a **red zone**: 128 bytes below the stack pointer that a leaf function may scribble in without adjusting anything. It is free performance in a normal program, and a trap in a kernel, because an interrupt pushes its frame at the stack pointer and downward — straight through the red zone, over whatever was stashed there, with no indication that anything happened. There is no red zone in 32-bit x86, so there is no 32-bit habit to inherit. The bug does not appear until interrupts do, in the next chapter, and it appears as impossible random corruption.
 
-In 32-bit systems, function arguments are traditionally placed on the stack.
+The compiler also assumes **SSE** exists, because on x86-64 it is part of the base architecture rather than an extension. It will emit vector instructions for something as ordinary as copying a structure, and the first one faults, because nothing has initialised the floating-point unit yet.
 
+And it assumes **position-independent code** is wanted, reaching globals through a register holding a table base. A kernel loaded at a fixed address wants the address.
+
+The theme is worth taking seriously: a freestanding kernel is not a program with the standard library removed. It runs somewhere the compiler's defaults were never designed for, and each default has to be examined rather than inherited.
+
+---
+
+# A 64-bit Kernel in a 32-bit Envelope
+
+The build has a problem that no amount of correct code solves. The Multiboot 1 specification — what GRUB Legacy and `qemu -kernel` implement — knows how to parse ELF32 headers and nothing else. Hand it a 64-bit executable and it declines to load it.
+
+The kernel is, unavoidably, 64-bit code. The resolution is to separate the container from the contents: link as ELF64 so the linker resolves 64-bit relocations properly, then rewrite the *headers* to ELF32 and leave every byte of code and data untouched.
+
+```text
+  ld       ------->  kernel64.elf     ELF64 headers, 64-bit code
+  objcopy  ------->  kernel           ELF32 headers, the same 64-bit code
+                                      |
+  the loader reads the headers, copies the sections to 1 MiB, and jumps
 ```
-Stack
 
-Argument 3
-Argument 2
-Argument 1
-Return Address
-```
+The loader never learns what it loaded. It reads a description it understands, does what the description says, and transfers control to a mixture of 32-bit and 64-bit machine code it has no opinion about.
 
-In the 64-bit System V ABI used by Linux and GCC, the first several arguments are placed directly into registers.
-
-```
-Register File
-
-RDI  -> First Argument
-RSI  -> Second Argument
-RDX  -> Third Argument
-RCX  -> Fourth Argument
-```
-
-Passing arguments in registers reduces memory accesses and improves performance.
-
-It also explains why assembly code written for 32-bit kernels cannot simply be recompiled for 64-bit systems.
-
-The interface between assembly and C has fundamentally changed.
+This works because every address in this kernel fits in 32 bits — the load address is one megabyte, and a 32-bit ELF field holds it comfortably. It is a trick with an expiry date. Relocate the kernel to the higher half, as a mature x86-64 kernel eventually does, and the addresses stop fitting and the trick stops working.
 
 ---
 
 # Why the Screen Driver Does Not Change
 
-One surprising aspect of this example is that the screen driver remains almost identical to the 32-bit version.
+The most surprising file in this chapter is the one that was not touched. The screen code is byte-for-byte the 32-bit original.
 
-The reason lies in the identity mapping created during initialization.
+Identity mapping is why. The video buffer is at `0xB8000` in physical memory, the kernel identity-mapped the low gigabyte, so `0xB8000` is still `0xB8000`, and a pointer to it is a perfectly good 64-bit pointer.
 
-Since virtual addresses initially equal physical addresses, the VGA text buffer still appears at the same address as before.
-
-```
+```text
 Virtual Address
       |
       v
-0xB8000
+   0xB8000
       |
       v
 Physical VGA Memory
 ```
 
-The driver neither knows nor cares that paging is active.
+The driver does not know paging is on. It cannot tell, and it should not have to, which is what a good abstraction is for: the machine underneath became substantially more sophisticated and the code above did not notice.
 
-From its perspective, nothing has changed.
-
-This illustrates one of the central goals of virtual memory.
-
-Properly designed abstractions allow software to continue working even when the underlying hardware becomes significantly more sophisticated.
+The only C change in the entire chapter is two new type definitions for 64-bit integers — and it is worth knowing what did *not* change. A 32-bit integer type is still 32 bits, because the data model these tools use keeps `int` at 32 bits even on a 64-bit machine. What grew is `long`, and, far more consequentially, **pointers**. Almost every difficulty in the chapters ahead traces back to that single sentence.
 
 ---
 
 # The Bootstrap Is the Foundation
 
-Students often become discouraged by the complexity of the bootstrap.
+Beginners find this chapter discouraging, and they are right to: unlike everything after it, nearly every line is mysterious, and the reward for all of it is thirteen characters in a corner of the screen.
 
-Unlike later kernel components, almost every line appears mysterious.
+The reason is structural. The bootstrap does work that happens once, at the only moment when nothing can be assumed — no memory management, no interrupts, no C, and a processor pretending to be from 1985. Every later subsystem, from the scheduler to the filesystem, runs inside an environment this code created and is allowed to take that environment for granted.
 
-This is normal.
-
-The bootstrap is unique because it performs tasks that occur only once during the lifetime of the operating system. Later subsystems such as process scheduling, interrupt handling, virtual memory management, and file systems all operate in an environment that the bootstrap has already prepared.
-
-The processor transition therefore represents one of the steepest learning curves in operating system development.
-
-Fortunately, it is also one of the shortest.
-
-Once the processor reaches `main()`, the operating system behaves much more like an ordinary C program. Every subsequent chapter builds upon the stable execution environment established here.
-
-Understanding this transition is therefore one of the most important milestones in learning how modern operating systems are constructed. It marks the point where the kernel moves beyond the bootloader's limited environment and begins taking complete control of the machine.
-
+It is the steepest part of the climb, and it is also the shortest. Once the processor reaches `main`, kernel development starts to feel like programming again, and every chapter that follows builds on the ground established here — the point where the kernel stops living in the bootloader's world and starts running the machine.
