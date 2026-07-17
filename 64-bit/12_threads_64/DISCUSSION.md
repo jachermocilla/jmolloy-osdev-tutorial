@@ -44,6 +44,45 @@ Once the names exist, two system calls that were hard to tell apart become easy:
 >
 > `fork()` makes a new address space and a thread to run in it. `thread_create()` makes a thread and reuses the address space it was called from.
 
+The sort pays for itself immediately, in the scheduler. Chapter 11 reloaded the page tables whenever the incoming task's differed from the outgoing one's; the same line now reads through one more pointer.
+
+```text
+    if (next->proc->pml4_phys != current_pml4_phys)
+        switch_pml4_phys(next->proc->pml4_phys);
+```
+
+Two threads of one process share a `process_t`, so the comparison finds them equal and the reload is skipped — not by an optimization, but because the structure says they are the same address space. Most of why threads are cheaper than processes is that one `->`.
+
+---
+
+# One Line, Two Meanings
+
+The demonstration is the same ring-3 program from the last chapter with a single call changed.
+
+```text
+    chapter 11:   u64int pid = syscall_fork();
+    chapter 12:   u64int tid = syscall_thread_create(&counter_down);
+```
+
+Both versions have one variable at one virtual address, and one loop that adds to it and another that subtracts. Chapter 11's output splits and never rejoins — the parent climbs to 1500, the child falls to 500, and neither can see the other, because each wrote its own private copy of the page.
+
+This chapter's output oscillates.
+
+```text
+  [up   tid=6] counter=1100
+  [down tid=7] counter=1000
+  [down tid=7] counter=900
+  [up   tid=6] counter=1000
+  [up   tid=6] counter=1100
+  [down tid=7] counter=1000
+```
+
+One number, moving in both directions, because there is one page and two threads writing it. `fork()` gave the child its own copy; `thread_create()` gave the new thread the same one. Everything else about the program is identical, and the output alone tells you which call ran.
+
+The kernel's own greeting changes too, and the change is the chapter in miniature: it now prints `pid = 1, tid = 2`. Eleven chapters printed one number, because a task was a process was a thread. There are two numbers from here on.
+
+Sharing also bites immediately, in the dumbest available place. Chapter 11 placed each user stack by arithmetic on the process id, which was fine while a pid named exactly one thread of control. Two threads of one process would be handed the same stack and destroy each other within a few instructions. The fix is four characters — index by thread id instead — and it is worth noticing how quietly the old code became wrong.
+
 ---
 
 # What Sharing Costs
@@ -89,11 +128,22 @@ A student who writes the code above and runs it will usually see the right answe
 
 The reason is arithmetic. The timer in this kernel fires fifty times a second, so a thread holds the processor for twenty milliseconds. The window between the load and the store is a few nanoseconds wide. The interrupt lands inside that window roughly one time in a million, and the loop is not run a million times.
 
-A test that passes here reports only that the interrupt did not land in the window today.
+This is not a hypothetical. The first version of this chapter's demo held the window open for fifty spin iterations, and with the lock commented out it printed the correct total three times in a row. A critical section a microsecond wide, on a 20-millisecond timeslice, is not interrupted rarely — it is not interrupted.
 
-Widen the window and the failure appears on demand. Speed the timer up and it appears more often. Add a second processor and it appears constantly, because a second processor is not sampling the window fifty times a second — it is inside the window whenever it wants to be.
+Widen the window and the failure appears on demand. With the read and the write pulled twenty thousand iterations apart, and the lock still commented out, four consecutive runs of the same binary:
 
-The lesson is worth carrying past this chapter, because it generalizes badly:
+```text
+  counter = 519, expected 800  LOST UPDATES
+  counter = 533, expected 800  LOST UPDATES
+  counter = 400, expected 800  LOST UPDATES
+  counter = 400, expected 800  LOST UPDATES
+```
+
+Wrong, and wrong by a different amount each time — which is the signature. A deterministic bug gives the same wrong answer; a race gives a different one, because the scheduler is making a different choice on every run.
+
+Speed the timer up and the failure appears more often. Add a second processor and it appears constantly, because a second processor is not sampling the window fifty times a second — it is inside the window whenever it wants to be.
+
+Had the demo shipped with the narrow window, a reader could have removed the lock, seen the right answer, and drawn precisely the wrong conclusion. That is worth carrying past this chapter, because it generalizes badly:
 
 > The reason your program has never raced is not evidence that it cannot.
 
@@ -112,6 +162,32 @@ What that buys is mutual exclusion by side effect — a property of the machine 
 **Use an atomic instruction.** `lock xchg` reads and writes memory as one indivisible transaction that no other processor can split. It is the real thing, and it costs a bus lock.
 
 The kernel in this chapter has one processor and uses the cheap version. What matters is knowing which sentence stops being true when a second core boots.
+
+---
+
+# Masking Is Not Locking
+
+The last three chapters guarded their critical sections like this:
+
+```text
+    asm volatile("cli");
+    ...
+    asm volatile("sti");
+```
+
+That is wrong, and it has been wrong since chapter 9. `sti` does not restore the interrupt flag — it *sets* it. Call one of those functions from a context where interrupts were already masked, and on the way out it hands them back behind its caller's back, ending a critical section the caller believes it is still standing in. The caller is then interrupted in the middle of something it had declared indivisible, and nothing anywhere reports it.
+
+The fix is ten lines: read the flags register before masking, and put the saved value back afterwards rather than assuming what it was.
+
+```text
+    flags = irq_save();      pushfq; pop flags; cli
+    ...                      the critical section
+    irq_restore(flags);      push flags; popfq
+```
+
+Nesting now works, because each region restores the state it found rather than the state it wishes were there. The general shape of this bug is worth recognising: a function that sets a global instead of restoring it is fine until it has a caller.
+
+And the reason it belongs in this chapter rather than in chapter 9 is that this is where the vocabulary arrives to say what went wrong. *Mask interrupts* and *take a lock* are different verbs. The first is a statement about the hardware you happen to be running on. The second is a claim your program makes about itself.
 
 ---
 
@@ -137,6 +213,19 @@ A lock that is held must make its next claimant wait. There are two ways to wait
 Blocking is better here for a reason worth stating plainly: the waiter has nothing to do, and the machine has work available. Spinning is not always wrong — on a multiprocessor, where the lock holder is running on another core right now and will release in fifty nanoseconds, spinning beats two context switches. On one processor it is never right, because the holder cannot possibly release while the waiter holds the CPU.
 
 Blocking has a price. It requires a scheduler that can be told about states other than "wants to run."
+
+It also requires the woken thread to be suspicious. The lock is not handed over — a thread is woken and told to try again, and between the wake and the moment it actually runs, any other thread may have taken the lock. So the wait is a loop and never an `if`:
+
+```text
+    while (m->locked)        not: if (m->locked)
+    {
+        wq_enqueue(&m->waiters, current_thread);
+        block();
+    }
+    m->locked = 1;
+```
+
+Being woken is being told to look again.
 
 ---
 
@@ -178,6 +267,8 @@ READY means on the ready queue. BLOCKED means on some mutex's wait queue. RUNNIN
 
 The rule earns its keep by making blocking trivial. Because a running thread was never on the ready queue, blocking does not have to remove it from anywhere. It marks itself unrunnable and yields, and the scheduler simply does not put it back.
 
+The rule also explains a field that otherwise looks redundant. Every thread carries a second link, threading it onto a registry of all threads that exist, and the obvious economy — reuse the queue link, one list is surely enough — would break the invariant on the first zombie. A zombie is on no queue, and `join()` still has to find it. Threading the registry through the same pointer would put a thread on two lists at once, which is exactly the thing the rule forbids. Two links, two purposes, and the invariant survives.
+
 Every serious bug in a scheduler is this rule being broken: a thread on two queues, or on none by accident. A thread stranded on no queue never runs again, and no fault fires to say so — the machine has no opinion about threads it was never asked to schedule.
 
 ---
@@ -216,7 +307,11 @@ The first two are why a finished thread becomes a zombie rather than disappearin
     yield forever
 ```
 
-The third is why a process counts its threads. Chapter 11 freed the address space when a task exited, which was correct because no two tasks could share one. Under sharing, the first thread to finish would demolish the memory its siblings are still executing in. A count, decremented on exit, means the last thread out is the one that turns off the lights.
+This is also where chapter 11 pays a debt it acknowledged. Its `task_exit` ended with a confession that it could free neither the stack it was standing on nor the structure it was reading, and leaked both. Nothing has been invented to fix that. The joiner is simply somebody else, on another stack, for whom neither object is load-bearing.
+
+The third disposal is why a process counts its threads. Chapter 11 freed the address space when a task exited, which was correct because no two tasks could share one. Under sharing, the first thread to finish would demolish the memory its siblings are still executing in. A count, decremented on exit, means the last thread out is the one that turns off the lights.
+
+That last thread frees the address space it is at that moment executing inside, which sounds impossible and is routine, for a reason chapter 11 depended on without ever saying: tearing down an address space touches the lower half, and the thread's code and stack live in the upper half — shared by reference, mapped identically in every address space, and untouched by the demolition.
 
 A thread nobody joins is a thread whose remains nobody clears. Real systems either require a join or mark the thread *detached* and hand the corpse to a dedicated reaper. There is no third option in which the problem does not exist.
 
@@ -252,6 +347,6 @@ Placing `fork()` and threads in adjacent chapters makes the problem visible in a
 
 Threads complete the concurrency model this book has been building since chapter 9. Processes provide isolation; threads provide sharing; the scheduler moves the processor between them; mutexes make sharing survivable. Together these are the vocabulary in which every operating system after 1970 describes what it is doing.
 
-The implementation here favours the smallest thing that is honestly correct on one processor. The mutex uses a plain store rather than an atomic exchange, because interrupt masking is genuinely sufficient when nothing else can be executing. The kernel heap is still not reentrant, and the chapter survives that by keeping every allocation inside a masked region — which is not a fix, only an arrangement that has not yet failed.
+The implementation here favours the smallest thing that is honestly correct on one processor. The mutex sets its flag with a plain store rather than an atomic exchange, because interrupts are masked and nothing else is executing — a sentence that is true today and describes the machine rather than the code. The kernel heap is still not reentrant, and the chapter survives that by keeping every allocation inside a masked region, which is not a fix but an arrangement that has not yet failed.
 
 Later chapters can pay these debts. Condition variables and semaphores build directly on the block-and-wake machinery. `exec()` gives processes a way to become new programs instead of copies. Copy-on-write makes `fork()` cheap. And a second processor makes several sentences in this chapter false at once, which is the most instructive thing that can happen to a design you thought you understood.
