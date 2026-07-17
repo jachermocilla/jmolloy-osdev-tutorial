@@ -1,404 +1,226 @@
-# Chapter 11: Process Creation with `fork()` and Private Address Spaces
+# Chapter 11: `fork()` and Private Address Spaces
 
-In the previous chapter, the operating system learned how to execute programs in user mode. Multiple applications could now run without possessing kernel privileges, and the processor enforced the boundary between user space and kernel space.
+The last chapter taught the processor to distrust. Programs run in ring 3, they cannot touch a supervisor page, and they reach the kernel only through a door the hardware guards.
 
-Despite this important achievement, every task still shared the same user memory. Although the scheduler could switch between different execution contexts, all processes effectively operated within a single address space.
+They still share a room. Every task, kernel and user alike, runs on one set of page tables, and "user pid 3" can read "user pid 4"'s stack — not because of a bug, but because there is only one address space with the user bit flipped on in places. Ring 3 protects the kernel from users. It does nothing to protect users from each other.
 
-Real operating systems go much further.
-
-Each process receives its own private view of memory. Two programs may use exactly the same virtual addresses without interfering with one another because those addresses refer to different physical memory. This illusion of exclusive ownership is one of the defining features of modern virtual memory.
-
-This chapter introduces that capability. The operating system will create independent address spaces for each process and implement one of the most influential system calls in Unix: **`fork()`**.
+This chapter finishes the job. Each process gets page tables of its own, so that two programs can use identical addresses and never meet, and the kernel gains the system call that made Unix Unix: **`fork()`**.
 
 ---
 
-# Why Every Process Needs Its Own Memory
+# One Address, Two Meanings
 
-Imagine two programs sharing exactly the same memory.
+If two programs share memory, they share every mistake. A stray pointer in one corrupts the other; a global written by one is read by the other; a heap trampled by one takes down both. Nothing can be reasoned about locally, because nothing is local.
 
-If one program modifies a global variable, the other immediately observes the change.
-
-If one process accidentally overwrites its stack, another process may crash.
-
-If one application corrupts its heap, every other running application becomes vulnerable.
-
-Such a system would be unreliable and nearly impossible to manage.
-
-Instead, each process is given its own virtual address space.
-
-Conceptually,
+Give each process its own translation of the same numbers and the problem evaporates.
 
 ```text
-               Virtual Address
+                    virtual 0x107060
 
-            0x40000000
-
-Process A  -------------> Physical Frame A
-
-Process B  -------------> Physical Frame B
+   Process A  ----[ A's page tables ]---->  physical frame 0x1F4000
+   Process B  ----[ B's page tables ]---->  physical frame 0x2A7000
 ```
 
-Although both programs use the same virtual address, the memory management unit translates each reference to a different physical page.
+Both programs load from the same address; each gets its own byte. A virtual address is not a location in the machine — it is a location *within a process*, and the tables are what make the difference. This is the illusion of exclusive ownership, and it is the most valuable thing paging buys.
 
-From the perspective of each process, it appears as though it owns the entire machine.
-
-This abstraction is one of the greatest strengths of virtual memory.
+The point of `fork()` is not that it duplicates a process. It is that the duplicate then goes its own way: the parent adds to a variable, the child subtracts from the same variable at the same address, and neither can see the other doing it.
 
 ---
 
-# The Address Space Is Divided into Two Regions
+# The Address Space Has Two Halves
 
-One important observation simplifies the design of the operating system.
+Users need privacy. The kernel needs the opposite. Every process should run the same kernel code, hit the same handlers, and share the same heap, and copying the kernel per process would be both wasteful and wrong — a heap allocation made by one process must be visible to the kernel while it services another.
 
-Although user programs require private memory, the kernel does not.
-
-Every process should execute the same kernel code, use the same device drivers, and access the same interrupt handlers.
-
-Duplicating the kernel for every process would waste enormous amounts of memory.
-
-Instead, the operating system divides the address space into two regions.
+The x86-64 address space is already split down the middle, and the split is exactly the one the kernel wants.
 
 ```text
-+----------------------------------+
-|           Kernel Space           |
-|      Shared by All Processes     |
-+----------------------------------+
+  PML4 entry           address range              contents
 
-+----------------------------------+
-|            User Space            |
-|      Private Per Process         |
-+----------------------------------+
+  511  ---+
+          |            0xFFFF800000000000         KERNEL
+  256  ---+                and above              heap, kernel stacks, tables
+                                                  SHARED by every process
+  ------------------------------------------------------------------------
+  255  ---+
+          |            0x0000000000000000         USER
+    0  ---+                and up                 code, data, stack
+                                                  PRIVATE to each process
 ```
 
-The lower portion of the address space belongs to the process.
+Entries 0 through 255 of the top-level table map the lower half, where user memory lives. Entries 256 through 511 map the upper half, which in this kernel is all kernel: the heap, every kernel stack, everything `kmalloc` returns.
 
-The upper portion belongs to the operating system.
+So the rule for making a new address space fits in one sentence: **share the kernel by reference, copy the user by value.**
 
-Whenever the scheduler switches from one process to another, only the user portion changes.
+"By reference" is literal. The child's top-level table gets a byte-for-byte copy of the parent's upper-half entries, which means both tables point at the *same* second-level tables underneath. Not similar mappings — the same ones. A page the kernel maps after the fork appears in both processes automatically, because there is only one set of kernel tables and both address spaces name it.
 
-The kernel remains mapped exactly the same way for every process.
-
-This design greatly simplifies scheduling, interrupt handling, and system calls because the kernel always executes within a familiar environment.
+That is the invariant chapter 9 asserted when it claimed a context switch was safe across an address-space change, and chapter 10 relied on when it pointed the TSS at a kernel stack. Here it stops being a comment and becomes a loop.
 
 ---
 
-# Sharing the Kernel, Copying the User
+# `fork()` Is a Frame and a `memcpy`
 
-The operating system therefore follows a simple principle:
+The famous strangeness of `fork()` is that it returns twice: once in the parent, with the child's process id, and once in the child, with zero. Written as a mystery, it is a mystery. Written in terms of what this kernel already has, it is an assignment.
 
-> Share everything that belongs to the kernel. Duplicate everything that belongs to the user.
-
-Conceptually,
+`fork()` is a system call, which means the caller's complete state is *already saved* — the interrupt frame from `int $0x80` describes, exactly, a program sitting mid-call waiting for a return value. To make a second process that resumes from the same call, copy that frame onto a new kernel stack and change one field.
 
 ```text
-                 Kernel
+  parent's kernel stack              child's kernel stack
 
-       +----------------------+
-       | Shared Code & Data   |
-       +----------------------+
-             ^          ^
-             |          |
-        Process A   Process B
-
-       +----------+ +----------+
-       | User Mem | | User Mem |
-       +----------+ +----------+
+  +----------------------+           +----------------------+
+  | ss, userrsp, rflags  |  memcpy   | ss, userrsp, rflags  |
+  | cs, rip -> after int |  ------>  | cs, rip -> after int |
+  | ...                  |           | ...                  |
+  | rax = child pid      |           | rax = 0              |  <- the only change
+  +----------------------+           +----------------------+
+        parent resumes                     child resumes
+        returning the pid                  returning zero
 ```
 
-Kernel page tables are shared among all processes.
+The parent's frame is never touched, so its `int $0x80` returns whatever the handler put in `rax` — the child's pid. The child's frame says zero, so when the scheduler first picks it, `iretq` restores it and the same instruction returns zero. There are not two returns from one call. There are two frames, differing in one field, and each returns once.
 
-User pages are copied whenever a new process is created.
-
-Although this approach consumes more memory than advanced techniques such as Copy-on-Write, it is considerably easier to understand and provides complete process isolation.
-
-Once this design is mastered, more sophisticated optimizations become natural extensions rather than conceptual leaps.
-
----
-
-# The Meaning of `fork()`
-
-The `fork()` system call occupies a unique place in Unix-like operating systems.
-
-Unlike most functions, `fork()` does not create a new program.
-
-Instead, it creates a second copy of the currently running process.
-
-Immediately after the call, two nearly identical processes exist.
-
-Both continue executing from exactly the same instruction.
-
-Both possess the same registers.
-
-Both have identical stacks.
-
-Both initially contain the same program data.
-
-The only observable difference is the value returned by `fork()`.
-
-Conceptually,
-
-```text
-           Parent Process
-
-                  |
-               fork()
-                  |
-         +--------+--------+
-         |                 |
-         v                 v
-
-     Parent           Child
-```
-
-From this point onward, the two processes execute independently.
-
----
-
-# One Call, Two Return Values
-
-One of the most surprising aspects of `fork()` is that it appears to return twice.
-
-The parent process receives the process identifier of its newly created child.
-
-The child process receives zero.
-
-Conceptually,
-
-```text
-            fork()
-
-        /             \
-
-Parent               Child
-
-return PID          return 0
-```
-
-This behavior allows both processes to determine their identity immediately after the call.
-
-A typical application can therefore distinguish between parent and child using a simple conditional statement.
-
-Although unusual at first, this design elegantly supports concurrent execution without requiring separate program entry points.
+Everything else `fork` does is bookkeeping: a `task_t`, a kernel stack, a cloned address space, and an append to the ready queue. There is no `read_eip`, no stack-pointer heuristic, no assembly. The 32-bit tutorial spends two hundred and fifty lines and several subtle bugs arriving here, because it is trying to duplicate a thread of control from inside ordinary C, where no one has saved the state for it. Chapters 4 and 9 already did.
 
 ---
 
 # Cloning an Address Space
 
-Creating a new process involves much more than allocating a task structure.
-
-The operating system must construct a completely new address space.
-
-Conceptually,
+The substance is in the tables. A clone allocates a fresh top-level table and walks the parent's, entry by entry, treating the two halves differently.
 
 ```text
-Parent
+  parent PML4                          child PML4
 
-PML4
- |
- +--> User Tables
- |
- +--> Kernel Tables
-
-
-            clone
-
-
-Child
-
-PML4
- |
- +--> User Tables (Copy)
- |
- +--> Kernel Tables (Shared)
+  [511] --------------------------.
+  [...]  upper half, kernel        `-->  [511]  same 8 bytes, same tables
+  [256] --------------------------'      [...]  SHARED by reference
+                                         [256]
+  ------------------------------         ------------------------------
+  [255]                                  [255]
+  [...]  lower half, user                [...]  walked, page by page
+  [  0] --------------.                  [  0]
+                       \
+                        \      for each leaf entry:
+                         \
+                          +--> user page?   allocate a new frame,
+                          |                 copy 4096 bytes into it,
+                          |                 point the child's entry at it
+                          |
+                          +--> kernel page? copy the entry as-is
 ```
 
-The kernel creates a new top-level page table.
+Above the halfway line, an entry is copied and the work stops there — eight bytes, and two processes now share an entire subtree of kernel mappings. Below it, every level is rebuilt and every user frame is duplicated, so the child ends with identical *contents* at identical *addresses* backed by entirely different physical memory. From that instant the two cannot reach each other.
 
-The entries corresponding to kernel memory are copied by reference because every process should execute the same kernel.
-
-The entries corresponding to user memory are duplicated.
-
-Each user page receives a newly allocated physical frame containing the same data as the original.
-
-After cloning completes, the parent and child possess identical memory contents but entirely different physical pages.
-
-From this moment onward, modifications made by one process cannot affect the other.
+Notice the test at the leaf. A page is copied because its `user` bit is set, not because of where it sits, which matters in this kernel: chapter 10 put the ring-3 program in a section inside the very first PML4 entry, alongside the kernel's identity map, so that one entry contains both kinds of page and the clone must sort them out one leaf at a time.
 
 ---
 
-# Context Switching Now Includes Memory
+# Where the Direct Map Earns Its Keep
 
-Earlier chapters introduced context switching by saving processor registers and restoring those of another task.
-
-That mechanism remains unchanged.
-
-However, switching between processes now involves another critical component: the page table.
-
-Conceptually,
+Look again at what the copy is: `memcpy` from one physical frame to another, using the physical addresses out of the page-table entries as pointers.
 
 ```text
-Scheduler
-
-Save Registers
-        |
-Load Registers
-        |
-Load New Page Table
-        |
-Resume Process
+  src_pte->frame << 12   ==  a physical address
+                         ==  a valid pointer, because of the direct map
+  memcpy(dst_phys, src_phys, 4096);
 ```
 
-Loading a new page table changes the processor's entire view of memory.
+That works only because chapter 7 arranged for physical address *P* to be readable at virtual address *P*. The number in the page-table entry is simultaneously the frame's physical address and a pointer the kernel can dereference, so copying a frame is one library call.
 
-The instruction pointer may remain unchanged, yet every virtual address now refers to the memory belonging to a different process.
+The 32-bit tutorial cannot do this, and what it does instead is worth knowing about. Its `copy_page_physical` **disables paging**, copies, and turns paging back on — with interrupts off, and with a stack pointer that for a few instructions refers to an address that no longer means anything. It is the most dangerous sequence in that codebase, and the whole of it is deleted here by a decision made four chapters ago.
 
-The processor therefore moves seamlessly between isolated execution environments simply by changing the active page table.
+The same convenience runs through the rest of the clone. Every table it allocates comes from the frame bitmap in the direct-mapped low region, so the address it writes to is the address `CR3` needs, and there is no conversion to get wrong.
 
 ---
 
-# The Illusion of Shared Addresses
+# The Hole in the Scheduler
 
-One consequence of virtual memory is often surprising to students.
-
-Two processes can use exactly the same addresses while storing completely different information.
-
-Consider a variable named `counter`.
-
-Both parent and child access it using the same virtual address.
-
-Conceptually,
+Chapter 9 left two lines' worth of comment where the address-space switch belonged. Filling it in is anticlimactic:
 
 ```text
-Parent
+    current_task = current_task->next;              /* choose */
 
-counter
-Virtual 0x40001000
-      |
-      v
-Physical Frame A
+    if (current_task->pml4_phys != current_pml4_phys)
+        switch_pml4_phys(current_task->pml4_phys);  /* the address space */
 
-
-Child
-
-counter
-Virtual 0x40001000
-      |
-      v
-Physical Frame B
+    return (registers_t *)current_task->rsp;        /* the context switch */
 ```
 
-Initially, both variables contain the same value because the child's memory was copied from the parent.
+Reloading the top-level page table in the middle of an interrupt handler sounds reckless. It is safe for three reasons, and all three were arranged in advance.
 
-As execution continues, each process modifies its own copy.
+The kernel stack the scheduler is standing on lives in the upper half, shared by reference, so it is mapped at the same address before and after the reload. The kernel code about to run — the register pops, the `iretq` — is likewise upper-half and likewise unchanged. And the TSS has already been pointed at the incoming task's kernel stack, so the next interrupt from ring 3 lands where it should.
 
-Although both variables occupy identical virtual addresses, they reside in different physical memory.
-
-This demonstrates that virtual addresses describe locations within a process, not within the machine itself.
+Nothing the processor can currently see changes. Only the lower half flips, and the kernel is not looking at the lower half. The instruction that switches the entire meaning of memory is safe precisely because the half that matters at that moment is identical in both.
 
 ---
 
-# Isolation Is the Goal
+# What "Different Address Space" Means, Measured
 
-The true purpose of `fork()` is not duplication.
-
-Its purpose is isolation.
-
-After the child begins executing, the operating system expects the two processes to evolve independently.
-
-One process may allocate additional memory.
-
-Another may terminate.
-
-One may modify data structures.
-
-The other should remain unaffected.
-
-Conceptually,
+The demo prints, from each process, the address of a shared variable and the value in `CR3`:
 
 ```text
-Before fork()
-
-Parent
-Data = 100
-
-
-After fork()
-
-Parent
-Data = 120
-
-
-Child
-Data = 95
+  fork() returned 4
+  cr3=0x116000  &counter=0x107060      <- parent
+  cr3=0x229000  &counter=0x107060      <- child
 ```
 
-Although both processes originated from the same state, they quickly diverge.
+One address. Two sets of page tables. Two physical frames. That pair of lines is the definition of a process, and everything else in the chapter exists to produce it.
 
-This independence is fundamental to modern multitasking systems.
+Then the two processes drive that address in opposite directions, and never collide:
 
-Without isolated address spaces, process management would be impossible.
+```text
+  [parent] pid=3 counter=1100        [child] pid=4 counter=900
+  [parent] pid=3 counter=1200        [child] pid=4 counter=800
+  [parent] pid=3 counter=1300        [child] pid=4 counter=700
+```
+
+Both started from 1000. Both write `counter`. Neither can see the other's arithmetic, because the same nine hex digits mean different memory to each of them.
 
 ---
 
-# The Cost of Copying
+# Tearing It Down
 
-Creating a complete copy of every user page is conceptually simple, but it is also expensive.
+Freeing an address space is the clone run backwards, and it has to be exactly as asymmetric. Walk the lower half, free every private user frame and every table the process owned alone, and touch nothing above the line — those tables belong to every other process too.
 
-Large applications may occupy hundreds of megabytes of memory.
+The failure modes here are silent in both directions. Free one shared kernel frame by mistake and the kernel corrupts a few forks later, somewhere else entirely. Free too little and the machine leaks memory slowly enough that nothing looks wrong until it does. Neither shows up on screen.
 
-Duplicating all of those pages every time `fork()` executes would consume considerable time and memory.
-
-Modern operating systems therefore employ an optimization known as **Copy-on-Write**.
-
-Instead of copying pages immediately, parent and child temporarily share them as read-only.
-
-Only when one process attempts to modify a page does the operating system create a private copy.
-
-Conceptually,
+So the correctness of teardown is not something to look at. It is something to count:
 
 ```text
-fork()
-
-        |
-
-Shared Read-Only Page
-
-        |
-
-Write Attempt
-
-        |
-
-Create Private Copy
+  free frames at start:                 3546
+  free frames after 200 clone+free:     3546
 ```
 
-This optimization dramatically improves the performance of process creation.
-
-However, it depends upon a thorough understanding of page faults and memory management.
-
-For this reason, the implementation presented in this chapter deliberately performs complete copies. The simpler design clearly illustrates how process isolation works before introducing more advanced techniques.
+Two hundred address spaces created and destroyed, and the frame bitmap ends exactly where it started. That number is the test.
 
 ---
 
-# The Foundation of Process Management
+# What This Costs
 
-The addition of private address spaces transforms the scheduler introduced in the previous chapter.
+Copying every user page is honest and expensive. A real program occupies megabytes, and duplicating all of it on every `fork` is time and memory spent on data the child may never read — especially since the most common thing a child does is immediately replace its entire memory image with a different program.
 
-Tasks are no longer merely independent execution contexts sharing one memory image.
+The standard cure is **copy-on-write**: at fork, share the frames read-only instead of copying them, and let the first write take a page fault, at which point the kernel makes a private copy of that one page and lets the instruction retry.
 
-They become true processes, each possessing its own memory, stack, and execution state.
+```text
+  fork          both processes point at the same frame, marked read-only
+     |
+  write attempt in either      ->  page fault
+     |
+  kernel copies that one page, marks it writable, resumes the instruction
+```
 
-The operating system can now execute multiple applications simultaneously while ensuring that they remain isolated from one another.
+The reason this chapter does not do it is worth stating: the copy is easy to trust, and copy-on-write is easy to get subtly wrong. Once whole-page copying is understood, the optimization becomes an obvious refinement instead of a leap — and it would be the first time in this tutorial that `page_fault()` does something other than panic.
 
-This capability forms the foundation upon which nearly every modern operating system feature is built.
+Two of this implementation's limits deserve naming out loud rather than being discovered.
+
+`task_exit` leaks. It reclaims the address space, which is the expensive part, and it cannot free the kernel stack it is standing on or the structure it is reading from. A real kernel hands both to a reaper thread running in another context; this one leaves two small fixed-size allocations behind and admits it at the point where it happens.
+
+Every fork also duplicates page tables it has no use for. Because the user program lives in the same top-level entry as the kernel's identity map, that entry cannot be shared by reference and must be walked, and its ten-odd tables are rebuilt on every clone. The fix is the higher-half migration this series has been pointing at since chapter 6: move the kernel entirely above the line, and the lower half becomes user-only and cheap to clone.
 
 ---
 
 # Looking Ahead
 
-The implementation of `fork()` completes one of the most important pieces of operating system infrastructure. Processes now possess independent address spaces, allowing multiple programs to execute concurrently without corrupting one another's memory. The scheduler manages execution, while the memory management subsystem provides the illusion that every process owns its own machine.
+The kernel now has processes in the full sense. Each has a private address space, they are created by the call Unix has used since 1970, they are preemptively scheduled across those address spaces, and they clean up after themselves. Together with ring 3, that is most of what the word "operating system" means.
 
-The implementation presented in this chapter intentionally favors clarity over efficiency. Every user page is copied during process creation, making the behavior easy to understand and debug. Future chapters will refine this design through optimizations such as Copy-on-Write, executable loading with `exec()`, demand paging, and more sophisticated process management.
+Three things follow naturally, and each depends on this one. `exec()` and an executable loader would let a program come from the filesystem rather than being linked into the kernel — which retires the `.user_text` arrangement, hands the lower half entirely to users, and makes the wasteful clone above disappear. Copy-on-write would make `fork` cheap, and it is motivated most by `exec`, since the pair together currently copies every page and then discards it. And `wait()` with a reaper would fix the leak and complete the Unix process model.
 
-Together, user mode and `fork()` establish the classic process model found in Unix and Unix-like operating systems. From this point onward, the kernel is capable of supporting independent applications that execute concurrently, remain isolated in memory, and interact with the operating system through well-defined interfaces. This marks another major step toward a complete general-purpose operating system.
-
+None of them needs anything this series has not already built.
