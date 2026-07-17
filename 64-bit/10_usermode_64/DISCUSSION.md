@@ -1,405 +1,229 @@
-# Chapter 10: User Mode and Loading the First User Program
+# Chapter 10: User Mode and the System Call Boundary
 
-Up to this point, every instruction executed by the operating system has run with complete control over the processor. Every task created by the scheduler has executed inside the kernel, sharing the same address space and possessing unrestricted access to memory, hardware devices, and processor registers.
+Every instruction this kernel has executed has run with complete control of the machine. Every task the scheduler created ran inside the kernel, in the kernel's address space, free to touch any byte of memory, any hardware port, and any processor register.
 
-Although this has allowed us to develop the operating system itself, it is not how modern computers operate.
+That is not how a computer is supposed to work. People do not run kernels; they run editors, shells, browsers, and compilers, and those programs are expected to do their jobs without being able to take the system down with them — whether by mistake or on purpose.
 
-Users do not interact directly with the kernel. Instead, they run ordinary programs such as text editors, web browsers, shells, and compilers. These applications are expected to execute without compromising the stability or security of the operating system.
+The idea that makes this possible is **privilege separation**, and this chapter builds it. The processor learns to distinguish trusted kernel code from untrusted application code, a task is dropped into the untrusted side, and the only thing it can still do is ask the kernel for help.
 
-Achieving this goal requires one of the most important ideas in computer systems: **privilege separation**.
-
-This chapter introduces user mode, allowing the processor to distinguish between trusted kernel code and untrusted application code. The operating system will load its first user program from the initial ramdisk, create an execution environment for it, and transfer control to it safely.
-
-For the first time, the kernel will execute software that does not possess complete control over the machine.
+For the first time, the kernel will run software that does not control the machine.
 
 ---
 
 # Why User Mode Exists
 
-Imagine a computer in which every application executes with unrestricted privileges.
+Consider a machine where every program runs with full privileges. One bad pointer overwrites the operating system. Any program can read another's memory, and so any program can read another's passwords. Any program can reprogram a device, mask an interrupt, or halt the processor. Nothing is reliable, because everything is trusted.
 
-A simple programming error could overwrite the operating system itself.
-
-A malicious application could read passwords stored by another program.
-
-Any process could reprogram hardware devices or disable interrupts.
-
-The result would be a system that is unreliable, insecure, and unstable.
-
-Modern processors prevent these problems by dividing execution into different privilege levels.
-
-Conceptually,
+Processors solve this by refusing to trust. Execution happens at a privilege level, and the level decides what is permitted.
 
 ```text
-+-------------------------+
-|      Kernel Mode        |
-|     Full Privileges     |
-+-------------------------+
-
-+-------------------------+
-|      User Mode          |
-|   Restricted Access     |
-+-------------------------+
+        Ring 0 -- the kernel
+        +--------------------------------------------+
+        | every instruction, every port, every page  |
+        +--------------------------------------------+
+                            ^
+                            |  system calls, interrupts, exceptions
+                            v
+        Ring 3 -- applications
+        +--------------------------------------------+
+        | ordinary instructions, user pages only     |
+        +--------------------------------------------+
 ```
 
-The operating system executes in the most privileged mode.
+The architecture defines four rings and almost every operating system uses two, for a practical reason: paging's protection bits distinguish only supervisor from user, so the middle rings have nothing to enforce with.
 
-Applications execute with limited privileges.
-
-Whenever an application requires a privileged service, it must ask the kernel to perform the operation on its behalf.
-
-This separation protects both the operating system and other running applications.
+The division is not only about safety; it is about responsibility. The kernel owns the hardware — memory, scheduling, filesystems, devices — and applications do the work people care about. When an application needs something the hardware guards, it does not reach for it. It asks, and the kernel decides.
 
 ---
 
-# The Kernel and Applications Have Different Responsibilities
+# Ring 3 Is Three Constants
 
-The distinction between kernel mode and user mode is not merely one of privilege.
+Chapter 9 ended by claiming the scheduler was already most of the way to processes. This is where that gets paid out.
 
-The two execution environments serve fundamentally different purposes.
-
-The kernel manages hardware resources.
-
-Applications perform useful work for the user.
-
-Conceptually,
+A task is a saved frame; `iretq` restores one; and `iretq` reads the privilege level out of the code selector in the frame it pops. So the frame that starts a task in ring 3 is the frame that starts a task in ring 0 with three fields changed.
 
 ```text
-Applications
-
-Text Editor
-Shell
-Compiler
-Browser
-
-        |
-        v
-
-Operating System Kernel
-
-Memory Management
-Scheduling
-Filesystems
-Drivers
-
-        |
-        v
-
-Hardware
+create_task                      create_user_task
+-----------------------          -----------------------
+frame->cs      = 0x08;    -->    frame->cs      = 0x1B;   user code, RPL 3
+frame->ss      = 0x10;    -->    frame->ss      = 0x23;   user data, RPL 3
+frame->userrsp = kstack;  -->    frame->userrsp = ustack; a stack in user pages
+frame->rip     = entry;          frame->rip     = entry;
+frame->rflags  = 0x202;          frame->rflags  = 0x202;
 ```
 
-Applications should not manipulate hardware directly.
+Those selectors are not new either. `0x1B` is entry 3 of the Global Descriptor Table with a requested privilege level of 3 in the low bits; `0x23` is entry 4, likewise. Chapter 4 built both descriptors, labelled them "user mode code" and "user mode data," and never used them. They have been sitting in the table for six chapters waiting for a frame to name them.
 
-Instead, they request services from the kernel, which decides whether those requests are permitted and carries them out safely.
-
-This organization allows many applications to share the same hardware without interfering with one another.
+The scheduler is not modified and does not care. It hands frames to the stub, the stub restores whatever it is given, and a frame with `CS.RPL = 3` in it resumes in ring 3 exactly as readily as one with `0x08` resumes in ring 0. Preemption of a user task is preemption of any other task.
 
 ---
 
-# Processor Privilege Levels
+# Returning From an Interrupt That Never Happened
 
-The x86 architecture defines several privilege levels, traditionally known as **rings**.
-
-Although four rings exist, modern operating systems typically use only two.
+There is no instruction that means "switch to user mode." There is no far jump in long mode to fake it with. The only way down a privilege level is to *return* from an interrupt, so the kernel builds the frame the return expects and executes the return.
 
 ```text
-Ring 0
+enter_user_mode(rip, rsp):
 
-Kernel
-
-
-Ring 3
-
-Applications
+    push  0x23      ss        user data, RPL 3
+    push  rsp       userrsp   the task's user stack
+    push  rflags    IF set, IOPL forced to 0
+    push  0x1B      cs        user code, RPL 3
+    push  rip       where the program starts
+    iretq
+                      |
+                      v
+    CPU pops all five, sees CS.RPL = 3,
+    and drops to ring 3 atomically
 ```
 
-Ring 0 possesses unrestricted access to processor instructions, memory management, interrupt handling, and hardware devices.
+This is chapter 4's `retfq` trick one ring lower: manufacture the evidence of a control transfer that never took place, and let the hardware act on it.
 
-Ring 3 executes with significant restrictions.
+Two details in that frame are load-bearing. The interrupt flag must be set, or the program runs in ring 3 with interrupts off and the timer can never take the processor back — a user program that cannot be preempted is not much of an improvement. And the I/O privilege level is forced to zero, which is what makes `outb` from ring 3 a fault rather than a device write.
 
-Certain instructions cannot be executed.
-
-Protected memory cannot be accessed.
-
-Hardware devices remain under the exclusive control of the operating system.
-
-Whenever an application attempts an operation beyond its privileges, the processor automatically transfers control back to the kernel.
-
-This hardware-enforced protection forms the basis of operating system security.
+Note also what the code deliberately does not do: it loads the data segment registers by hand but leaves `ss` alone. `iretq` loads `ss` from the frame, and it must arrive there with a privilege level of 3 or the return itself faults.
 
 ---
 
-# Loading a Program
+# The Kernel Stack Must Change Hands
 
-The previous chapter introduced the Virtual Filesystem and the initial ramdisk.
+An interrupt arrives while a user program is running. The handler cannot run on the stack the program was using — it may be too small, it may be unmapped, it may be a pointer the program invented on purpose to see what the kernel does with it. The kernel must land on a stack it owns.
 
-Those components now become immediately useful.
-
-Instead of embedding every executable directly inside the kernel, the operating system loads a program from the initrd.
-
-Conceptually,
+The processor does this itself, and it needs to be told where to go. That is what the **Task State Segment (TSS)** is for.
 
 ```text
-initrd
-
-+----------------------+
-| User Program         |
-+----------------------+
-
-        |
-        v
-
-Kernel Loader
-
-        |
-        v
-
-User Memory
+  ring 3 running                      ring 0 handling
+  +-----------------+                 +------------------+
+  | user stack      |   interrupt     | kernel stack     |
+  | 0x700000033f98  |  ----------->   | task->kstack_top |
+  +-----------------+                 +------------------+
+                          ^
+                          |
+                    CPU reads rsp0 from the TSS
+                    and switches stacks before
+                    pushing anything
 ```
 
-The loader locates the program within the filesystem, copies it into the process's address space, and prepares it for execution.
+The 32-bit TSS was 104 bytes of saved registers, because the 386 could switch tasks in hardware by swapping one TSS for another. Long mode deleted that machinery, and the structure that remains is almost entirely a table of stack pointers. One field matters here: `rsp0`, the stack the processor loads on entry to ring 0. The rest of the table is the interrupt stack mechanism chapter 4 mentioned — stacks the processor switches to unconditionally, which is how a double-fault handler survives the stack overflow that caused it.
 
-Although the example program is extremely simple, the loading process establishes the foundation for every executable that will run in the operating system.
+Because the field names *the* kernel stack rather than *a* kernel stack, it must be updated every time the scheduler changes tasks. Point it at the wrong task's stack and the next interrupt from ring 3 saves its frame on top of somebody else's, which is the kind of bug that corrupts a task that was not even running.
+
+One more field earns its place: the I/O map base is set past the end of the segment, meaning there is no I/O bitmap, meaning every port is denied to ring 3. Combined with an IOPL of zero, hardware access is closed.
 
 ---
 
-# Every Process Needs Its Own Execution Environment
+# Everything Ring 3 Touches Must Live in a User Page
 
-Loading executable code into memory is only the beginning.
+Chapter 6 put a `user` bit in every page-table entry, and until now it has protected nothing, since everything ran in ring 0 and the bit was never consulted. It becomes real here, and it is stricter than it first appears.
 
-Before the processor can execute a user program, the operating system must construct an execution environment for it.
-
-Every process requires
-
-* executable code,
-* a stack,
-* processor registers,
-* and an initial instruction pointer.
-
-Conceptually,
+The user program is not loaded from anywhere — it is compiled into the kernel, into its own page-aligned section, and the kernel flips the user bit on exactly those pages before starting the task.
 
 ```text
-+---------------------------+
-| Executable Code           |
-+---------------------------+
-|           ...             |
-+---------------------------+
-|        User Stack         |
-+---------------------------+
+  kernel image                       page permissions
+
+  .text        kernel code           supervisor, exec
+  .rodata      kernel strings        supervisor
+  .data/.bss   kernel state          supervisor, write
+  ------------------------------------------------------
+  .user_text   the ring 3 program    USER, exec, not writable
+  .user_data   its strings           USER
+  ------------------------------------------------------
+  user stack   0x700000030000..      USER, write
+
+              everything else remains invisible to ring 3
 ```
 
-When execution begins, the processor expects these components to be present.
+"Exactly those pages" is not a figure of speech. A string literal in the user program would ordinarily land in `.rodata`, which is supervisor-only, and reading its first character from ring 3 is a page fault. The strings must be moved into a user section by hand, and they are.
 
-The operating system is responsible for creating them before transferring control to the application.
+The same trap has a sharper edge in the system call stubs. They are `static inline`, which is a *hint* — at low optimization, or when the compiler simply decides otherwise, the stub is emitted as a real function in `.text`, and the ring 3 program calls into a supervisor page and faults on the instruction fetch. The fault is correct; the bug is that the code was there at all. `always_inline` turns the wish into a requirement, and copies the stub into the user's own page.
+
+The general rule is worth carrying out of this chapter: when code or data must live in a particular section, the compiler's cooperation is not optional, and `inline` does not ask for it.
 
 ---
 
-# Crossing the Boundary Between Kernel and User Mode
+# Coming Back: the System Call
 
-Transitioning from kernel mode to user mode is fundamentally different from calling an ordinary function.
+A user program that can only touch its own pages cannot print. Everything it wants — the screen, a file, its own process id — belongs to the kernel, so it has to ask, and asking means crossing back into ring 0 through a door the kernel controls.
 
-A function call remains within the same privilege level.
-
-Entering user mode changes the processor's protection level.
-
-Conceptually,
+That door is an interrupt. The program puts a number in a register and executes `int $0x80`; the processor switches to the kernel stack named by the TSS, saves a frame, and lands in the handler, at ring 0, on memory the user cannot touch.
 
 ```text
-Kernel Mode
+  ring 3                                            ring 0
 
-      |
-      v
-
-Privilege Transition
-
-      |
-      v
-
-User Mode
+  rax = 0  (SYS_MONITOR_WRITE)
+  rdi = pointer to the string
+  int $0x80  ------------------------------------>  stub saves a frame
+                                                    (on the kernel stack,
+                                                     via TSS rsp0)
+                                                          |
+                                                          v
+                                                    syscall_handler(regs)
+                                                      fn = syscalls[regs->rax]
+                                                      regs->rax = fn(regs->rdi,
+                                                                     regs->rsi, ...)
+                                                          |
+  rax = return value  <---------------------------  iretq restores the frame
 ```
 
-The processor performs several actions simultaneously during this transition.
+The dispatcher is one line of ordinary C, and the reason is the calling convention. The System V ABI passes the first six arguments in registers, the interrupt frame already captured every register, so the arguments are simply there — a function-pointer call with six registers read out of the frame. The 32-bit tutorial has to hand-write pushes and pops in assembly, because 32-bit code passes arguments on the stack and the stack in question belongs to ring 3, which the kernel must not touch.
 
-It changes the current privilege level.
-
-It begins using a user stack.
-
-It loads the application's instruction pointer.
-
-From that moment onward, the processor executes the application with restricted privileges.
-
-The kernel has intentionally surrendered direct control until an interrupt, exception, or system call returns execution to the operating system.
+The frame does double duty. It carries the arguments in, and the handler writes the return value into `regs->rax` on the way out, so the value the user program finds in `RAX` after its `int` is a value the kernel wrote into a saved frame that `iretq` then restored. The mechanism from chapter 4 — a handler modifying the live frame — is now the calling convention of an operating system.
 
 ---
 
-# Returning to the Kernel
+# One Gate, Not Forty-Nine
 
-Applications do not remain permanently in user mode.
+The gate for vector `0x80` is marked as reachable from ring 3. Every other gate is not, and the difference matters enough to state plainly.
 
-Eventually they require operating system services.
-
-Perhaps they wish to read a file.
-
-Perhaps they need additional memory.
-
-Perhaps the timer interrupt occurs.
-
-In every case, execution returns to the kernel.
-
-Conceptually,
+A gate's descriptor carries a privilege level of its own, and it decides who may reach that vector with an `int` instruction. The original tutorial sets ring 3 on *every* gate in the table, which hands a user program a set of tools it should never have:
 
 ```text
-Kernel
-
-      |
-      v
-
-User Program
-
-      |
-      +------ System Call
-
-      |
-      +------ Interrupt
-
-      |
-      +------ Exception
-
-      |
-      v
-
-Kernel
+  int $0x0e   forge a page fault
+  int $0x08   forge a double fault
+  int $0x20   forge a timer tick -- and drive the scheduler by hand
 ```
 
-The operating system therefore serves as the central authority that coordinates all interaction between applications and hardware.
+That last one is worth sitting with. A ring 3 program that can raise the timer vector can call the scheduler whenever it likes, with a frame of its choosing.
 
-User programs execute independently, but the kernel remains responsible for managing the entire system.
+Marking only the syscall gate closes it, and the denial comes from the processor rather than from any check the kernel writes. A ring 3 `int $0x0e` does not run the page-fault handler; it raises a general protection fault whose error code says, in effect, *you asked for vector 14 and you are not allowed to*.
 
 ---
 
-# Why the Processor Needs a Kernel Stack
+# What the Hardware Actually Refuses
 
-Suppose an interrupt occurs while a user program is running.
-
-The processor cannot safely continue using the application's stack.
-
-The application could corrupt it, intentionally or accidentally.
-
-Instead, the processor immediately switches to a trusted kernel stack before executing the interrupt handler.
-
-Conceptually,
+A line of text printed from ring 3 proves the transition works. It proves nothing about isolation, and isolation is the entire point, so it is worth naming exactly what a hostile task is prevented from doing — and by whom.
 
 ```text
-User Stack
+  ring 3 attempts                    the CPU's answer
 
-      |
-Interrupt
-      |
-      v
+  write to kernel memory       ->    #PF, error 0x7 (present|write|user)
+                                     the page is supervisor-only
 
-Kernel Stack
+  outb to a hardware port      ->    #GP
+                                     IOPL is 0 and the I/O bitmap is empty
 
-      |
-Interrupt Handler
+  int $0x0e to forge a fault   ->    #GP
+                                     the gate's privilege level is 0
 ```
 
-This guarantees that the operating system always executes using memory under its own control.
-
-The mechanism responsible for identifying the correct kernel stack is the **Task State Segment (TSS)**.
-
-Although the TSS has many historical fields dating back to early versions of the x86 architecture, modern operating systems primarily use it to specify which kernel stack should be activated whenever execution transitions from user mode to kernel mode.
+Not one of those refusals is a check in the kernel's code. The kernel's whole contribution was setting some bits correctly — a user bit here, an IOPL there, a gate privilege level — and the hardware does the enforcing on every instruction, at no cost, without being asked. That is what makes the boundary trustworthy: a check the kernel performs can be forgotten, and a check the processor performs cannot.
 
 ---
 
-# Memory Protection Becomes Meaningful
+# The Isolation This Does Not Yet Give
 
-Earlier chapters introduced virtual memory, but every kernel thread still shared the same address space.
+Being honest about the gaps is more useful than celebrating the milestone.
 
-User mode finally gives memory protection practical significance.
+All tasks still share one address space. Ring 3 is kept out of kernel pages by the user bit rather than by having a different set of page tables, and two user tasks are kept apart only because they were handed different stack addresses. Nothing stops one from reading the other's stack — both are user pages in the same address space. Real isolation needs a page table per process and a `CR3` reload in the scheduler, which is the hole chapter 9 deliberately left open.
 
-Conceptually,
-
-```text
-+---------------------------+
-| Kernel Memory             |
-| Accessible Only by Kernel |
-+---------------------------+
-
-+---------------------------+
-| User Program              |
-| User Memory               |
-+---------------------------+
-```
-
-Applications execute within their own regions of virtual memory.
-
-Kernel memory remains protected.
-
-If an application attempts to access memory reserved for the operating system, the processor immediately raises an exception.
-
-The operating system can then terminate the offending process without affecting the remainder of the system.
-
-This isolation is one of the defining characteristics of modern operating systems.
-
----
-
-# The Beginning of Process Isolation
-
-Kernel threads introduced multitasking by allowing multiple execution contexts to share the processor.
-
-User mode introduces a second, equally important concept: **isolation**.
-
-Two applications should not interfere with one another.
-
-One program should not overwrite another's memory.
-
-A faulty application should not crash the operating system.
-
-Conceptually,
-
-```text
-+----------------------+
-| Process A            |
-+----------------------+
-
-+----------------------+
-| Process B            |
-+----------------------+
-
-+----------------------+
-| Operating System     |
-+----------------------+
-```
-
-Although these processes still share certain kernel resources, the processor now distinguishes between trusted kernel execution and untrusted application execution.
-
-Future chapters will strengthen this separation further by giving each process its own virtual address space.
-
----
-
-# The Operating System Becomes a Platform
-
-This chapter changes the role of the operating system.
-
-Earlier chapters focused on building kernel infrastructure: interrupt handling, paging, memory allocation, filesystems, and scheduling. Those components enabled the operating system to function internally.
-
-With the introduction of user mode, the operating system begins serving another purpose. It becomes a platform upon which other software can execute.
-
-Applications are no longer part of the kernel.
-
-They become clients of the kernel.
-
-The operating system now exists not only to manage hardware but also to provide a secure and controlled environment in which independent programs can run.
-
-This transition marks one of the defining moments in operating system development.
+The system call boundary has a second gap, and it is the classic one. The handler takes a pointer from a user register and dereferences it, on the kernel's behalf, with the kernel's privileges. A hostile program can pass the address of kernel memory to a call that prints strings, and the kernel will read it and print it — happily, correctly, and catastrophically. The processor cannot help here, because the processor is doing what ring 0 asked. Every pointer that crosses this boundary must be validated by the kernel: in user space, mapped, long enough. This kernel does not do it, and knowing the name of the failure — a **confused deputy** — is most of learning to avoid it.
 
 ---
 
 # Looking Ahead
 
-Introducing user mode fundamentally changes the architecture of the operating system. The kernel is no longer the only software executing on the processor. It now manages programs that execute with fewer privileges, communicate through controlled interfaces, and depend upon the operating system for access to hardware and other protected resources.
+The operating system has changed jobs. Everything up to now was infrastructure the kernel built for itself: interrupts, paging, a heap, a filesystem, a scheduler. With ring 3 running, the kernel becomes a *platform* — software it did not write runs on it, with fewer privileges than it has, reaching hardware only through an interface the kernel defines and the processor enforces.
 
-The user program loaded in this chapter is intentionally simple, but it establishes the execution model used by every modern operating system. Future chapters will extend this foundation by introducing system calls, independent virtual address spaces, executable file formats such as ELF, process creation through operations such as `fork()` and `exec()`, and mechanisms for communication between processes.
+The program here is trivial, and the execution model around it is the one every modern system uses. What remains is to make it general: an executable format so programs can be loaded from the filesystem instead of linked into the kernel, an address space per process, `fork` and `exec`, and a faster door than `int $0x80`.
 
-With user mode in place, the operating system has crossed an important threshold. It is no longer merely a kernel capable of managing itself. It has become an environment capable of running and protecting other software, fulfilling one of the central purposes of every general-purpose operating system.
-
+The threshold has been crossed regardless. This is no longer a kernel that manages itself. It is an environment that runs and protects other software, which is what a general-purpose operating system is for.
