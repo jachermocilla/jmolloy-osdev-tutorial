@@ -62,28 +62,31 @@ int strcmp(char *str1, char *str2)
 
 // Copy the NULL-terminated string src into dest, and
 // return dest.
+//
+// The tutorial's version tests `while (*src != 0)` *after* incrementing, so it
+// stops one character early and never writes the terminating NUL. It also
+// forgets to return dest at all, so the caller reads whatever happened to be
+// in the return register.
 char *strcpy(char *dest, const char *src)
 {
-    do
-    {
-      *dest++ = *src++;
-    }
-    while (*src != 0);
+    char *ret = dest;
+    while ((*dest++ = *src++) != 0)
+        ;
+    return ret;
 }
 
 // Concatenate the NULL-terminated string src onto
 // the end of dest, and return dest.
+//
+// The tutorial writes `*dest = *dest++;` -- undefined behaviour, since dest is
+// read and modified without an intervening sequence point. It then returns a
+// pointer to the *end* of dest rather than to dest, and drops the NUL as above.
 char *strcat(char *dest, const char *src)
 {
+    char *ret = dest;
     while (*dest != 0)
-    {
-        *dest = *dest++;
-    }
-
-    do
-    {
-        *dest++ = *src++;
-    }
-    while (*src != 0);
-    return dest;
+        dest++;
+    while ((*dest++ = *src++) != 0)
+        ;
+    return ret;
 }

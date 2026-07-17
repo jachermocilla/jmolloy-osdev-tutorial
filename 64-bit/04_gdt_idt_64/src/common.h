@@ -19,4 +19,14 @@ void outb(u16int port, u8int value);
 u8int inb(u16int port);
 u16int inw(u16int port);
 
+// These were never prototyped in the 32-bit tutorial, which merely produced
+// warnings. In 64-bit code an implicit declaration is a real hazard: C assumes
+// the function returns `int`, so a function that actually returns a pointer has
+// its result silently truncated to 32 bits. Declare everything.
+void memcpy(u8int *dest, const u8int *src, u32int len);
+void memset(u8int *dest, u8int val, u32int len);
+int strcmp(char *str1, char *str2);
+char *strcpy(char *dest, const char *src);
+char *strcat(char *dest, const char *src);
+
 #endif // COMMON_H

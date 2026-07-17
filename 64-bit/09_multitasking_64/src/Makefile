@@ -7,7 +7,14 @@
 
 SOURCES=boot.o main.o monitor.o common.o descriptor_tables.o isr.o interrupt.o gdt.o timer.o kheap.o paging.o ordered_array.o fs.o initrd.o task.o
 
-CFLAGS=-m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
+# The C dialect. Linux pins this explicitly in its top-level Makefile
+# (KBUILD_CFLAGS += -std=gnu11) rather than taking whatever the compiler
+# defaults to that year. We do the same, for the same reason: GCC 15 moved its
+# default to gnu23, where `bool`, `true` and `false` became keywords, and every
+# project that had not said what it wanted found out the hard way.
+CSTD=-std=gnu11
+
+CFLAGS=$(CSTD) -m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
        -fno-pie -fno-pic -ffreestanding -mno-red-zone \
        -mno-mmx -mno-sse -mno-sse2 -Wall -g
 LDFLAGS=-T link.ld -m elf_x86_64 -z max-page-size=0x1000 -z noexecstack

@@ -71,7 +71,7 @@ static void init_idt()
     idt_ptr.limit = sizeof(idt_entry_t) * 256 -1;
     idt_ptr.base  = (u64int)&idt_entries;
 
-    memset(&idt_entries, 0, sizeof(idt_entry_t)*256);
+    memset((u8int *)&idt_entries, 0, sizeof(idt_entry_t)*256);
 
     idt_set_gate( 0, (u64int)isr0 , 0x08, 0x8E);
     idt_set_gate( 1, (u64int)isr1 , 0x08, 0x8E);
