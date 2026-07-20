@@ -1,0 +1,33 @@
+# Makefile for JamesM's kernel tutorials -- 64-bit port.
+#
+# We link an ELF64 kernel, then rewrite the container to ELF32 with objcopy.
+# Multiboot 1 loaders (GRUB Legacy, qemu -kernel) only parse ELF32 headers, but
+# they will happily load and jump into an image whose *contents* are 64-bit.
+# Every address in this kernel is well below 4 GiB, so nothing is lost.
+
+SOURCES=boot.o main.o monitor.o common.o descriptor_tables.o isr.o interrupt.o gdt.o timer.o kheap.o paging.o ordered_array.o fs.o initrd.o thread.o proc.o sync.o semaphore.o condvar.o keyboard.o usermode.o syscall.o user.o
+
+# The C dialect. Linux pins this explicitly in its top-level Makefile
+# (KBUILD_CFLAGS += -std=gnu11) rather than taking whatever the compiler
+# defaults to that year. We do the same, for the same reason: GCC 15 moved its
+# default to gnu23, where `bool`, `true` and `false` became keywords, and every
+# project that had not said what it wanted found out the hard way.
+CSTD=-std=gnu11
+
+CFLAGS=$(CSTD) -m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
+       -fno-pie -fno-pic -ffreestanding -mno-red-zone \
+       -mno-mmx -mno-sse -mno-sse2 -Wall -g
+LDFLAGS=-T link.ld -m elf_x86_64 -z max-page-size=0x1000 -z noexecstack
+ASFLAGS=-felf64 -g -F dwarf
+
+all: $(SOURCES) link
+
+clean:
+	-rm -f *.o kernel kernel64.elf
+
+link:
+	ld $(LDFLAGS) -o kernel64.elf $(SOURCES)
+	objcopy -I elf64-x86-64 -O elf32-i386 kernel64.elf kernel
+
+.s.o:
+	nasm $(ASFLAGS) $<
