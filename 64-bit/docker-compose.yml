@@ -1,0 +1,28 @@
+# Build any 64-bit tutorial chapter in a throwaway Ubuntu 22.04 container.
+#
+# The whole 64-bit/ tree is mounted at /build, so relative paths in the
+# Makefiles and the mkinitrd.sh scripts work unchanged and the finished kernel
+# and initrd.img land back in the chapter folder on the host.
+#
+# Normally you drive this through ./build.sh, which supplies the chapter name
+# and your user id. To call the service directly:
+#
+#     DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
+#         docker compose run --rm builder 03_screen_64
+#
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    # The kernel is 64-bit x86, compiled natively with -m64 and then rewritten
+    # into a 32-bit multiboot container. Pinning the platform to amd64 keeps
+    # that native path working on Apple Silicon and other ARM hosts, where
+    # Docker runs the container under emulation.
+    platform: linux/amd64
+    # Run as the host user so the build products (kernel, *.o, initrd.img) are
+    # owned by you rather than by root. build.sh fills these in.
+    user: "${DOCKER_UID:-0}:${DOCKER_GID:-0}"
+    volumes:
+      - .:/build
+    working_dir: /build
